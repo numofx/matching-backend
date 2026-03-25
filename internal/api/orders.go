@@ -28,6 +28,8 @@ type createOrderRequest struct {
 	LimitPrice    string          `json:"limit_price"`
 	WorstFee      string          `json:"worst_fee"`
 	Expiry        int64           `json:"expiry"`
+	OrderEntrySpec string           `json:"order_entry_spec,omitempty"`
+	UIIntent       *spotOrderIntent `json:"ui_intent,omitempty"`
 	ActionJSON    json.RawMessage `json:"action_json"`
 	Signature     string          `json:"signature"`
 }
@@ -54,10 +56,10 @@ func (r createOrderRequest) toParams(cfg config.Config) (orders.CreateOrderParam
 	if r.AssetAddress == "" {
 		return orders.CreateOrderParams{}, fmt.Errorf("asset_address is required")
 	}
-	if r.DesiredAmount == "" {
+	if r.DesiredAmount == "" && r.UIIntent == nil {
 		return orders.CreateOrderParams{}, fmt.Errorf("desired_amount is required")
 	}
-	if r.LimitPrice == "" {
+	if r.LimitPrice == "" && r.UIIntent == nil {
 		return orders.CreateOrderParams{}, fmt.Errorf("limit_price is required")
 	}
 	if r.WorstFee == "" {
@@ -84,7 +86,7 @@ func (r createOrderRequest) toParams(cfg config.Config) (orders.CreateOrderParam
 	}
 
 	side := orders.Side(strings.ToLower(r.Side))
-	if side != orders.SideBuy && side != orders.SideSell {
+	if side != "" && side != orders.SideBuy && side != orders.SideSell {
 		return orders.CreateOrderParams{}, fmt.Errorf("side must be 'buy' or 'sell'")
 	}
 
@@ -108,6 +110,18 @@ func (r createOrderRequest) toParams(cfg config.Config) (orders.CreateOrderParam
 			QuotePrecision: 8,
 		}
 	}
+	if isSpotContractInstrument(instrument) {
+		var err error
+		side, r.LimitPrice, r.DesiredAmount, err = validateOrTranslateSpotUIIntent(r.OrderEntrySpec, r.UIIntent, side, r.LimitPrice, r.DesiredAmount)
+		if err != nil {
+			return orders.CreateOrderParams{}, err
+		}
+		if side != orders.SideBuy && side != orders.SideSell {
+			return orders.CreateOrderParams{}, fmt.Errorf("side must be 'buy' or 'sell'")
+		}
+	} else if r.OrderEntrySpec != "" || r.UIIntent != nil {
+		return orders.CreateOrderParams{}, fmt.Errorf("order_entry_spec and ui_intent are only supported for the spot usdc/cngn contract")
+	}
 	converter, err := pricing.NewConverter(instrument)
 	if err != nil {
 		return orders.CreateOrderParams{}, err
@@ -121,7 +135,6 @@ func (r createOrderRequest) toParams(cfg config.Config) (orders.CreateOrderParam
 			return orders.CreateOrderParams{}, err
 		}
 	}
-
 	filledAmount := r.FilledAmount
 	if filledAmount == "" {
 		filledAmount = "0"

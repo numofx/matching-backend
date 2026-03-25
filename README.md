@@ -6,6 +6,7 @@ Thin offchain backend for the `matching` contracts.
 
 Initial scope:
 
+- one spot market: USDC/cNGN
 - one market: BTC convex perp
 - one variance market: BTCVAR30-PERP
 - one order type: limit order
@@ -66,6 +67,7 @@ Important values:
 - `MATCHING_ADDRESS`
 - `TRADE_MODULE_ADDRESS`
 - `BTC_PERP_ASSET_ADDRESS`
+- `CNGN_SPOT_ASSET_ADDRESS`
 - `CNGN_APR30_2026_FUTURE_ASSET_ADDRESS`
 - `CNGN_APR30_2026_FUTURE_SUB_ID`
 - optionally `EXPECTED_ORDER_OWNER`
@@ -84,9 +86,62 @@ Important values:
 - `BTCVAR30_FUNDING_CAP`
 - optionally `BTCVAR30_ORACLE_SIGNING_KEY`
 
+For spot-style `USDC/cNGN`, the market is enabled when `CNGN_SPOT_ASSET_ADDRESS` is set. The registry
+resolves this instrument by exact `(asset_address, sub_id=0)` and exposes the canonical market symbol
+`USDCcNGN-SPOT`. Human-readable pair formatting remains in display fields such as
+`display_name` and `display_label`.
+
+- `contract_type=spot`
+- `settlement_type=spot`
+- `base_asset_symbol=USDC`
+- `quote_asset_symbol=cNGN`
+
+Spot order-entry contract is explicit in market metadata as `order_entry_spec=usdc_cngn_spot_v1`.
+That contract is:
+
+- UI price unit: `cNGN per USDC`
+- UI size unit: `USDC notional`
+- UI side meaning: `BUY` acquires USDC, `SELL` disposes of USDC
+- Engine price unit: `USDC per cNGN`
+- Engine amount unit: `cNGN amount`
+- Engine side policy: invert the UI side
+
+Formulas:
+
+```text
+engine_price = 1 / ui_price
+engine_amount = ui_size * ui_price
+UI BUY  -> engine SELL
+UI SELL -> engine BUY
+```
+
+Invariant:
+
+```text
+ui_size ≈ engine_amount * engine_price
+```
+
+Submitters may send raw engine fields only, or may additionally send:
+
+- `order_entry_spec=usdc_cngn_spot_v1`
+- `ui_intent.side`
+- `ui_intent.price`
+- `ui_intent.size`
+
+When those UI fields are present, the API rejects the order unless they map back to the submitted
+engine fields under the exact spot contract formulas and side inversion.
+
+Order and trade responses for spot include a normalized `spot_contract` echo with:
+
+- `ui_intent`
+- `engine_order`
+- `balance_delta`
+
 For the physically delivered `USDC/cNGN APR-30-2026` future, the market is only enabled when both
 `CNGN_APR30_2026_FUTURE_ASSET_ADDRESS` and `CNGN_APR30_2026_FUTURE_SUB_ID` are set. The registry
-resolves this instrument by exact `(asset_address, sub_id)` and exposes:
+resolves this instrument by exact `(asset_address, sub_id)` and exposes the canonical market symbol
+`USDCcNGN-APR30-2026`. Human-readable pair formatting remains in display fields such as
+`display_name` and `display_label`.
 
 - `contract_type=deliverable_fx_future`
 - `settlement_type=physical_delivery`

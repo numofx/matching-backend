@@ -52,6 +52,15 @@ type marketPresentation struct {
 	DisplayPriceKind   string `json:"display_price_kind,omitempty"`
 	AssetAddress       string `json:"asset_address,omitempty"`
 	SubID              string `json:"sub_id,omitempty"`
+	OrderEntrySpec     string `json:"order_entry_spec,omitempty"`
+	UIPriceUnit        string `json:"ui_price_unit,omitempty"`
+	UISizeUnit         string `json:"ui_size_unit,omitempty"`
+	UISideMeaning      string `json:"ui_side_meaning,omitempty"`
+	EnginePriceUnit    string `json:"engine_price_unit,omitempty"`
+	EngineAmountUnit   string `json:"engine_amount_unit,omitempty"`
+	EngineSidePolicy   string `json:"engine_side_policy,omitempty"`
+	UIPriceToEngine    string `json:"ui_price_to_engine,omitempty"`
+	UISizeToEngine     string `json:"ui_size_to_engine,omitempty"`
 }
 
 type presentedOrder struct {
@@ -86,6 +95,7 @@ type presentedOrder struct {
 	DisplayLabel     string          `json:"display_label,omitempty"`
 	DisplaySemantic  string          `json:"display_semantics,omitempty"`
 	TickSize         string          `json:"tick_size,omitempty"`
+	SpotContract     *spotOrderContractEcho `json:"spot_contract,omitempty"`
 }
 
 type orderResponse struct {
@@ -111,6 +121,7 @@ type presentedTrade struct {
 	Market         string      `json:"market,omitempty"`
 	ContractType   string      `json:"contract_type,omitempty"`
 	SettlementType string      `json:"settlement_type,omitempty"`
+	SpotContract   *spotOrderContractEcho `json:"spot_contract,omitempty"`
 }
 
 type presentedTradeStats struct {
@@ -404,6 +415,9 @@ func (s *Server) resolveMarket(r *http.Request) instruments.Metadata {
 		}
 	}
 
+	if item, ok := s.instruments.BySymbol(instruments.CNGNSpotSymbol); ok {
+		return item
+	}
 	if item, ok := s.instruments.BySymbol(instruments.BTCConvexPerpSymbol); ok {
 		return item
 	}
@@ -435,6 +449,7 @@ func presentTrades(items []orders.TradeFill, instrument instruments.Metadata) []
 
 	presented := make([]presentedTrade, 0, len(items))
 	for _, item := range items {
+		spotContract, _ := deriveSpotContractFromTrade(item, instrument)
 		presented = append(presented, presentedTrade{
 			TradeID:        item.TradeID,
 			AssetAddress:   strings.ToLower(item.AssetAddress),
@@ -448,6 +463,7 @@ func presentTrades(items []orders.TradeFill, instrument instruments.Metadata) []
 			Market:         instrument.Symbol,
 			ContractType:   instrument.ContractType,
 			SettlementType: instrument.SettlementType,
+			SpotContract:   spotContract,
 		})
 	}
 	return presented
@@ -464,6 +480,7 @@ func presentTradeStats(stats orders.TradeStats24h) presentedTradeStats {
 }
 
 func presentOrder(order orders.Order, instrument instruments.Metadata) presentedOrder {
+	spotContract, _ := deriveSpotContractFromOrder(order, instrument)
 	presented := presentedOrder{
 		OrderID:          order.OrderID,
 		OwnerAddress:     order.OwnerAddress,
@@ -494,6 +511,7 @@ func presentOrder(order orders.Order, instrument instruments.Metadata) presented
 		DisplayLabel:     instrument.DisplayLabel,
 		DisplaySemantic:  instrument.DisplaySemantics,
 		TickSize:         instrument.TickSize,
+		SpotContract:     spotContract,
 	}
 	if instrument.PricingModel != instruments.PricingModelVariance {
 		return presented
@@ -528,6 +546,15 @@ func presentMarket(market instruments.Metadata) marketPresentation {
 		DisplayPriceKind:   market.DisplayPriceKind,
 		AssetAddress:       strings.ToLower(market.AssetAddress),
 		SubID:              market.SubID,
+		OrderEntrySpec:     market.OrderEntrySpec,
+		UIPriceUnit:        market.UIPriceUnit,
+		UISizeUnit:         market.UISizeUnit,
+		UISideMeaning:      market.UISideMeaning,
+		EnginePriceUnit:    market.EnginePriceUnit,
+		EngineAmountUnit:   market.EngineAmountUnit,
+		EngineSidePolicy:   market.EngineSidePolicy,
+		UIPriceToEngine:    market.UIPriceToEngine,
+		UISizeToEngine:     market.UISizeToEngine,
 	}
 }
 

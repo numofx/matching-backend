@@ -32,23 +32,37 @@ type Metadata struct {
 	DisplayLabel       string        `json:"display_label,omitempty"`
 	DisplayName        string        `json:"display_name,omitempty"`
 	SettlementNote     string        `json:"settlement_note,omitempty"`
+	OrderEntrySpec     string        `json:"order_entry_spec,omitempty"`
+	UIPriceUnit        string        `json:"ui_price_unit,omitempty"`
+	UISizeUnit         string        `json:"ui_size_unit,omitempty"`
+	UISideMeaning      string        `json:"ui_side_meaning,omitempty"`
+	EnginePriceUnit    string        `json:"engine_price_unit,omitempty"`
+	EngineAmountUnit   string        `json:"engine_amount_unit,omitempty"`
+	EngineSidePolicy   string        `json:"engine_side_policy,omitempty"`
+	UIPriceToEngine    string        `json:"ui_price_to_engine,omitempty"`
+	UISizeToEngine     string        `json:"ui_size_to_engine,omitempty"`
 	FundingInterval    time.Duration `json:"-"`
 	Enabled            bool          `json:"enabled"`
 }
 
 type Registry struct {
+	items           []Metadata
 	bySymbol        map[string]Metadata
 	byAssetAndSubID map[string]Metadata
 }
 
 func NewRegistry(items []Metadata) *Registry {
 	registry := &Registry{
+		items:           append([]Metadata(nil), items...),
 		bySymbol:        make(map[string]Metadata, len(items)),
 		byAssetAndSubID: make(map[string]Metadata, len(items)),
 	}
 
 	for _, item := range items {
 		registry.bySymbol[item.Symbol] = item
+		if alias := symbolAlias(item.Symbol); alias != "" {
+			registry.bySymbol[alias] = item
+		}
 		if item.AssetAddress != "" && item.SubID != "" {
 			registry.byAssetAndSubID[assetAndSubIDKey(item.AssetAddress, item.SubID)] = item
 		}
@@ -62,8 +76,8 @@ func (r *Registry) Enabled() []Metadata {
 		return nil
 	}
 
-	items := make([]Metadata, 0, len(r.bySymbol))
-	for _, item := range r.bySymbol {
+	items := make([]Metadata, 0, len(r.items))
+	for _, item := range r.items {
 		if item.Enabled {
 			items = append(items, item)
 		}
@@ -97,4 +111,15 @@ func (r *Registry) ByAssetAndSubID(assetAddress, subID string) (Metadata, bool) 
 
 func assetAndSubIDKey(assetAddress, subID string) string {
 	return assetAddress + "|" + subID
+}
+
+func symbolAlias(symbol string) string {
+	switch symbol {
+	case CNGNSpotSymbol:
+		return CNGNSpotLegacySymbol
+	case CNGNApr2026Symbol:
+		return CNGNApr2026LegacySymbol
+	default:
+		return ""
+	}
 }

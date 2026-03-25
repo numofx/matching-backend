@@ -32,6 +32,7 @@ type Config struct {
 	BTCVar30FundingCoeff          float64
 	BTCVar30FundingCap            float64
 	BTCVar30OracleSigningKey      string
+	CNGNSpotAssetAddress          string
 	CNGNApr2026FutureAssetAddress string
 	CNGNApr2026FutureSubID        string
 }
@@ -56,6 +57,7 @@ func Load() (Config, error) {
 		BTCVar30FundingCoeff:          getenvFloatDefault("BTCVAR30_FUNDING_COEFF", 0.10),
 		BTCVar30FundingCap:            getenvFloatDefault("BTCVAR30_FUNDING_CAP", 0.05),
 		BTCVar30OracleSigningKey:      strings.TrimSpace(os.Getenv("BTCVAR30_ORACLE_SIGNING_KEY")),
+		CNGNSpotAssetAddress:          strings.ToLower(strings.TrimSpace(os.Getenv("CNGN_SPOT_ASSET_ADDRESS"))),
 		CNGNApr2026FutureAssetAddress: strings.ToLower(strings.TrimSpace(os.Getenv("CNGN_APR30_2026_FUTURE_ASSET_ADDRESS"))),
 		CNGNApr2026FutureSubID:        strings.TrimSpace(os.Getenv("CNGN_APR30_2026_FUTURE_SUB_ID")),
 	}

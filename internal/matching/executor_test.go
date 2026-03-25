@@ -102,6 +102,45 @@ func TestBuildExecutorRequestForBTCVar30Market(t *testing.T) {
 	}
 }
 
+func TestBuildExecutorRequestForSpotMarket(t *testing.T) {
+	candidate := orders.MatchCandidate{
+		Taker: orders.Order{
+			OrderID:       "taker-spot",
+			OwnerAddress:  "0xowner1",
+			SignerAddress: "0xsigner1",
+			AssetAddress:  "0x3333333333333333333333333333333333333333",
+			SubaccountID:  "601",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"601","nonce":"1","module":"0xtrade","data":"0xaaa","expiry":"100","owner":"0xowner1","signer":"0xsigner1"}`),
+			Signature:     "0xsig1",
+			Nonce:         "1",
+		},
+		Maker: orders.Order{
+			OrderID:       "maker-spot",
+			OwnerAddress:  "0xowner2",
+			SignerAddress: "0xsigner2",
+			SubaccountID:  "602",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"602","nonce":"2","module":"0xtrade","data":"0xbbb","expiry":"100","owner":"0xowner2","signer":"0xsigner2"}`),
+			Signature:     "0xsig2",
+			Nonce:         "2",
+		},
+	}
+
+	req, err := buildExecutorRequest("USDCcNGN-SPOT", candidate, "0x", "1602", "3000000")
+	if err != nil {
+		t.Fatalf("buildExecutorRequest returned error: %v", err)
+	}
+
+	if req.Market != "USDCcNGN-SPOT" {
+		t.Fatalf("market = %s", req.Market)
+	}
+	if req.AssetAddress != "0x3333333333333333333333333333333333333333" {
+		t.Fatalf("asset address = %s", req.AssetAddress)
+	}
+	if req.OrderData.FillDetails[0].Price != "1602" || req.OrderData.FillDetails[0].AmountFilled != "3000000" {
+		t.Fatalf("unexpected fill details %+v", req.OrderData.FillDetails[0])
+	}
+}
+
 func TestExecutorClientSubmitMatch(t *testing.T) {
 	candidate := orders.MatchCandidate{
 		Taker: orders.Order{
