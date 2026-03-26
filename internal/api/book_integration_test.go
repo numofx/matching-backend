@@ -100,10 +100,16 @@ func TestSpotUIOrderEndToEndPathEchoesNormalizedContract(t *testing.T) {
 		_, _ = pool.Exec(ctx, "delete from active_orders where order_id like $1", suffix+"%")
 	})
 
-	registry := instruments.DefaultRegistry(config.Config{
-		CNGNSpotAssetAddress: assetAddress,
-	})
-	server := NewServer(config.Config{}, pool, registry, nil)
+	cfg := config.Config{
+		CNGNSpotAssetAddress:          assetAddress,
+		CNGNApr2026FutureAssetAddress: "0x752803d72c1835cdcd300c7fde6c7d7d2f12e679",
+		CNGNApr2026FutureSubID:        "1777507200",
+		BTCVar30Enabled:               false,
+		BTCVar30AssetAddress:          "",
+		BTCPerpAssetAddress:           "",
+	}
+	registry := instruments.DefaultRegistry(cfg)
+	server := NewServer(cfg, pool, registry, nil)
 	repo := orderrepo.NewRepository(pool)
 
 	createPayload := map[string]any{
