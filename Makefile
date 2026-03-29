@@ -8,6 +8,10 @@ run-api:
 run-matcher:
 	$(GO) run ./cmd/matcher
 
+.PHONY: migrate
+migrate:
+	$(GO) run ./cmd/migrate
+
 .PHONY: test
 test:
 	$(GO) test ./...

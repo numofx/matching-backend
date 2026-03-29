@@ -332,7 +332,11 @@ Expected local stack:
 Suggested flow:
 
 1. Start Postgres.
-2. Apply migrations from `migrations/`.
+2. Apply migrations:
+
+```bash
+go run ./cmd/migrate
+```
 3. Run the API:
 
 ```bash
@@ -346,6 +350,18 @@ env $(cat .env.example | xargs) go run ./cmd/matcher
 ```
 
 For a cleaner local env, export the variables from `.env.example` or use your usual dotenv tooling.
+
+## Railway Deploy Contract
+
+Production deploys are expected to run database migrations before the API starts.
+This repository encodes that in `railway.toml`:
+
+- Railway builds both the API binary and the migration binary.
+- Railway runs `./migrate` as the pre-deploy command.
+- Railway starts the service only after the migration step succeeds.
+
+`DATABASE_URL` in Railway should be a reference variable to the Postgres service, for example
+`${{Postgres.DATABASE_URL}}`, rather than a copied literal URL.
 
 ### EOA-Owned Order Submission
 
