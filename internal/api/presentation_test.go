@@ -174,4 +174,7 @@ func TestPresentMarketIncludesSpotOrderEntryContract(t *testing.T) {
 	if presented.UISizeToEngine != "engine_amount = ui_size * ui_price" {
 		t.Fatalf("ui size formula = %q", presented.UISizeToEngine)
 	}
+	if presented.LastTradeTimestamp != nil {
+		t.Fatalf("expected nil last_trade_timestamp in metadata presentation, got %v", *presented.LastTradeTimestamp)
+	}
 }

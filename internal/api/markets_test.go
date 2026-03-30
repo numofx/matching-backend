@@ -56,8 +56,11 @@ func TestHandleMarketsIncludesDeliverableFutureMetadata(t *testing.T) {
 	if found.SubID != "1777507200" {
 		t.Fatalf("sub id = %q", found.SubID)
 	}
-	if found.ExpiryTimestamp != 1777507200 || found.LastTradeTimestamp != 1777420800 {
+	if found.ExpiryTimestamp != 1777507200 {
 		t.Fatalf("unexpected expiry window %+v", found)
+	}
+	if found.LastTradeTimestamp != nil {
+		t.Fatalf("expected nil last_trade_timestamp without trade history, got %+v", found)
 	}
 	if found.BaseAssetSymbol != "USDC" || found.QuoteAssetSymbol != "cNGN" {
 		t.Fatalf("unexpected base/quote %q/%q", found.BaseAssetSymbol, found.QuoteAssetSymbol)
