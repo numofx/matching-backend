@@ -49,6 +49,13 @@ type MatchCandidate struct {
 	Maker Order
 }
 
+type MarketDiagnostics struct {
+	OpenBidCount       int32
+	OpenAskCount       int32
+	TradeCount         int64
+	LastTradeTimestamp *time.Time
+}
+
 type Repository struct {
 	pool *pgxpool.Pool
 }
@@ -490,6 +497,44 @@ select
 		return TradeStats24h{}, mapPGError(err)
 	}
 	return stats, nil
+}
+
+func (r *Repository) GetMarketDiagnostics(ctx context.Context, assetAddress string, subID string) (MarketDiagnostics, error) {
+	const query = `
+with bid_counts as (
+  select count(*)::int4 as count
+  from active_orders
+  where asset_address = $1 and sub_id = $2 and side = 'buy' and status = 'active'
+),
+ask_counts as (
+  select count(*)::int4 as count
+  from active_orders
+  where asset_address = $1 and sub_id = $2 and side = 'sell' and status = 'active'
+),
+trade_stats as (
+  select count(*)::int8 as count, max(created_at) as last_trade_at
+  from trade_fills
+  where asset_address = $1 and sub_id = $2
+)
+select
+  coalesce((select count from bid_counts), 0),
+  coalesce((select count from ask_counts), 0),
+  coalesce((select count from trade_stats), 0),
+  (select last_trade_at from trade_stats)
+`
+
+	var diagnostics MarketDiagnostics
+	err := r.pool.QueryRow(ctx, query, strings.ToLower(assetAddress), subID).Scan(
+		&diagnostics.OpenBidCount,
+		&diagnostics.OpenAskCount,
+		&diagnostics.TradeCount,
+		&diagnostics.LastTradeTimestamp,
+	)
+	if err != nil {
+		return MarketDiagnostics{}, mapPGError(err)
+	}
+
+	return diagnostics, nil
 }
 
 func (r *Repository) bestBySide(ctx context.Context, assetAddress string, subID string, side Side) (*Order, error) {

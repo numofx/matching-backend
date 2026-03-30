@@ -41,7 +41,7 @@ type marketPresentation struct {
 	BaseAssetSymbol    string `json:"base_asset_symbol,omitempty"`
 	QuoteAssetSymbol   string `json:"quote_asset_symbol,omitempty"`
 	ExpiryTimestamp    int64  `json:"expiry_timestamp,omitempty"`
-	LastTradeTimestamp int64  `json:"last_trade_timestamp,omitempty"`
+	LastTradeTimestamp *int64 `json:"last_trade_timestamp"`
 	PriceSemantics     string `json:"price_semantics,omitempty"`
 	DisplaySemantics   string `json:"display_semantics,omitempty"`
 	DisplayName        string `json:"display_name,omitempty"`
@@ -64,37 +64,37 @@ type marketPresentation struct {
 }
 
 type presentedOrder struct {
-	OrderID          string          `json:"order_id"`
-	OwnerAddress     string          `json:"owner_address"`
-	SignerAddress    string          `json:"signer_address"`
-	SubaccountID     string          `json:"subaccount_id"`
-	RecipientID      string          `json:"recipient_id"`
-	Nonce            string          `json:"nonce"`
-	Side             orders.Side     `json:"side"`
-	AssetAddress     string          `json:"asset_address"`
-	SubID            string          `json:"sub_id"`
-	DesiredAmount    string          `json:"desired_amount"`
-	FilledAmount     string          `json:"filled_amount"`
-	LimitPrice       string          `json:"limit_price"`
-	WorstFee         string          `json:"worst_fee"`
-	Expiry           int64           `json:"expiry"`
-	ActionJSON       json.RawMessage `json:"action_json"`
-	Signature        string          `json:"signature"`
-	Status           orders.Status   `json:"status"`
-	CreatedAt        time.Time       `json:"created_at"`
-	Market           string          `json:"market,omitempty"`
-	ContractType     string          `json:"contract_type,omitempty"`
-	SettlementType   string          `json:"settlement_type,omitempty"`
-	BaseAssetSymbol  string          `json:"base_asset_symbol,omitempty"`
-	QuoteAssetSymbol string          `json:"quote_asset_symbol,omitempty"`
-	ExpiryTimestamp  int64           `json:"expiry_timestamp,omitempty"`
-	VariancePrice    float64         `json:"variance_price,omitempty"`
-	VolPercent       float64         `json:"vol_percent,omitempty"`
-	PriceSemantics   string          `json:"price_semantics,omitempty"`
-	DisplayName      string          `json:"display_name,omitempty"`
-	DisplayLabel     string          `json:"display_label,omitempty"`
-	DisplaySemantic  string          `json:"display_semantics,omitempty"`
-	TickSize         string          `json:"tick_size,omitempty"`
+	OrderID          string                 `json:"order_id"`
+	OwnerAddress     string                 `json:"owner_address"`
+	SignerAddress    string                 `json:"signer_address"`
+	SubaccountID     string                 `json:"subaccount_id"`
+	RecipientID      string                 `json:"recipient_id"`
+	Nonce            string                 `json:"nonce"`
+	Side             orders.Side            `json:"side"`
+	AssetAddress     string                 `json:"asset_address"`
+	SubID            string                 `json:"sub_id"`
+	DesiredAmount    string                 `json:"desired_amount"`
+	FilledAmount     string                 `json:"filled_amount"`
+	LimitPrice       string                 `json:"limit_price"`
+	WorstFee         string                 `json:"worst_fee"`
+	Expiry           int64                  `json:"expiry"`
+	ActionJSON       json.RawMessage        `json:"action_json"`
+	Signature        string                 `json:"signature"`
+	Status           orders.Status          `json:"status"`
+	CreatedAt        time.Time              `json:"created_at"`
+	Market           string                 `json:"market,omitempty"`
+	ContractType     string                 `json:"contract_type,omitempty"`
+	SettlementType   string                 `json:"settlement_type,omitempty"`
+	BaseAssetSymbol  string                 `json:"base_asset_symbol,omitempty"`
+	QuoteAssetSymbol string                 `json:"quote_asset_symbol,omitempty"`
+	ExpiryTimestamp  int64                  `json:"expiry_timestamp,omitempty"`
+	VariancePrice    float64                `json:"variance_price,omitempty"`
+	VolPercent       float64                `json:"vol_percent,omitempty"`
+	PriceSemantics   string                 `json:"price_semantics,omitempty"`
+	DisplayName      string                 `json:"display_name,omitempty"`
+	DisplayLabel     string                 `json:"display_label,omitempty"`
+	DisplaySemantic  string                 `json:"display_semantics,omitempty"`
+	TickSize         string                 `json:"tick_size,omitempty"`
 	SpotContract     *spotOrderContractEcho `json:"spot_contract,omitempty"`
 }
 
@@ -109,18 +109,18 @@ type bookResponse struct {
 }
 
 type presentedTrade struct {
-	TradeID        int64       `json:"trade_id"`
-	AssetAddress   string      `json:"asset_address"`
-	SubID          string      `json:"sub_id"`
-	Price          string      `json:"price"`
-	Size           string      `json:"size"`
-	AggressorSide  orders.Side `json:"aggressor_side"`
-	TakerOrderID   string      `json:"taker_order_id,omitempty"`
-	MakerOrderID   string      `json:"maker_order_id,omitempty"`
-	CreatedAt      time.Time   `json:"created_at"`
-	Market         string      `json:"market,omitempty"`
-	ContractType   string      `json:"contract_type,omitempty"`
-	SettlementType string      `json:"settlement_type,omitempty"`
+	TradeID        int64                  `json:"trade_id"`
+	AssetAddress   string                 `json:"asset_address"`
+	SubID          string                 `json:"sub_id"`
+	Price          string                 `json:"price"`
+	Size           string                 `json:"size"`
+	AggressorSide  orders.Side            `json:"aggressor_side"`
+	TakerOrderID   string                 `json:"taker_order_id,omitempty"`
+	MakerOrderID   string                 `json:"maker_order_id,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	Market         string                 `json:"market,omitempty"`
+	ContractType   string                 `json:"contract_type,omitempty"`
+	SettlementType string                 `json:"settlement_type,omitempty"`
 	SpotContract   *spotOrderContractEcho `json:"spot_contract,omitempty"`
 }
 
@@ -137,6 +137,19 @@ type tradesResponse struct {
 	Stats              presentedTradeStats `json:"stats_24h"`
 	Trades             []presentedTrade    `json:"trades"`
 	NextBeforeTradeID  int64               `json:"next_before_trade_id,omitempty"`
+}
+
+type marketDiagnosticsResponse struct {
+	Market             string `json:"market"`
+	AssetAddress       string `json:"asset_address"`
+	SubID              string `json:"sub_id"`
+	ContractType       string `json:"contract_type,omitempty"`
+	SettlementType     string `json:"settlement_type,omitempty"`
+	LoadedInMatcher    bool   `json:"loaded_in_matcher"`
+	OpenBidCount       int32  `json:"open_bid_count"`
+	OpenAskCount       int32  `json:"open_ask_count"`
+	TradeCount         int64  `json:"trade_count"`
+	LastTradeTimestamp *int64 `json:"last_trade_timestamp"`
 }
 
 type oraclePayloadResponse struct {
@@ -182,11 +195,13 @@ func (s *Server) Run() error {
 	router.Get("/v1/markets", s.handleMarkets)
 	router.Get("/v1/book", s.handleBook)
 	router.Get("/v1/trades", s.handleTrades)
+	router.Get("/debug/markets", s.handleMarketDiagnostics)
 	router.Post("/v1/orders", s.handleCreateOrder)
 	router.Post("/v1/orders/cancel", s.handleCancelOrder)
 	router.Get("/oracle/btcvar30/latest", s.handleBTCVar30Latest)
 	router.Get("/oracle/btcvar30/history", s.handleBTCVar30History)
 
+	s.logRegisteredMarkets()
 	slog.Info("api listening", "addr", s.cfg.APIAddr)
 	return http.ListenAndServe(s.cfg.APIAddr, router)
 }
@@ -195,7 +210,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) handleMarkets(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleMarkets(w http.ResponseWriter, r *http.Request) {
 	if s.instruments == nil {
 		writeJSON(w, http.StatusOK, []marketPresentation{})
 		return
@@ -208,7 +223,7 @@ func (s *Server) handleMarkets(w http.ResponseWriter, _ *http.Request) {
 
 	response := make([]marketPresentation, 0, len(items))
 	for _, item := range items {
-		response = append(response, presentMarket(item))
+		response = append(response, s.presentMarket(r.Context(), item))
 	}
 
 	writeJSON(w, http.StatusOK, response)
@@ -227,9 +242,10 @@ func (s *Server) handleBook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load book"})
 		return
 	}
+	s.logMarketQuery(r.Context(), "book_query", market)
 
 	writeJSON(w, http.StatusOK, bookResponse{
-		MarketPresentation: presentMarket(market),
+		MarketPresentation: s.presentMarket(r.Context(), market),
 		Bids:               presentOrders(bids, market),
 		Asks:               presentOrders(asks, market),
 	})
@@ -273,6 +289,7 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load trades"})
 		return
 	}
+	s.logMarketQuery(r.Context(), "trades_query", market)
 
 	nextBeforeTradeID := int64(0)
 	if len(items) == int(limit) {
@@ -280,11 +297,30 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, tradesResponse{
-		MarketPresentation: presentMarket(market),
+		MarketPresentation: s.presentMarket(r.Context(), market),
 		Stats:              presentTradeStats(stats),
 		Trades:             presentTrades(items, market),
 		NextBeforeTradeID:  nextBeforeTradeID,
 	})
+}
+
+func (s *Server) handleMarketDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if s.instruments == nil {
+		writeJSON(w, http.StatusOK, []marketDiagnosticsResponse{})
+		return
+	}
+
+	items := s.instruments.Enabled()
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Symbol < items[j].Symbol
+	})
+
+	response := make([]marketDiagnosticsResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, s.marketDiagnosticsPayload(r.Context(), item))
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
@@ -432,7 +468,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 
 func presentOrders(items []orders.Order, instrument instruments.Metadata) []presentedOrder {
 	if len(items) == 0 {
-		return nil
+		return []presentedOrder{}
 	}
 
 	presented := make([]presentedOrder, 0, len(items))
@@ -444,7 +480,7 @@ func presentOrders(items []orders.Order, instrument instruments.Metadata) []pres
 
 func presentTrades(items []orders.TradeFill, instrument instruments.Metadata) []presentedTrade {
 	if len(items) == 0 {
-		return nil
+		return []presentedTrade{}
 	}
 
 	presented := make([]presentedTrade, 0, len(items))
@@ -477,6 +513,70 @@ func presentTradeStats(stats orders.TradeStats24h) presentedTradeStats {
 		Low:    stats.Low,
 		Volume: stats.Volume,
 	}
+}
+
+func (s *Server) logRegisteredMarkets() {
+	if s.instruments == nil {
+		return
+	}
+
+	for _, item := range s.instruments.Enabled() {
+		slog.Info(
+			"market registered",
+			"market", item.Symbol,
+			"asset_address", item.AssetAddress,
+			"sub_id", item.SubID,
+			"contract_type", item.ContractType,
+			"settlement_type", item.SettlementType,
+			"loaded_in_matcher", item.Enabled,
+		)
+	}
+}
+
+func (s *Server) logMarketQuery(ctx context.Context, event string, market instruments.Metadata) {
+	diagnostics := s.marketDiagnosticsPayload(ctx, market)
+	slog.Info(
+		event,
+		"market", diagnostics.Market,
+		"asset_address", diagnostics.AssetAddress,
+		"sub_id", diagnostics.SubID,
+		"loaded_in_matcher", diagnostics.LoadedInMatcher,
+		"open_bid_count", diagnostics.OpenBidCount,
+		"open_ask_count", diagnostics.OpenAskCount,
+		"trade_count", diagnostics.TradeCount,
+		"last_trade_timestamp", diagnostics.LastTradeTimestamp,
+	)
+}
+
+func (s *Server) marketDiagnosticsPayload(ctx context.Context, market instruments.Metadata) marketDiagnosticsResponse {
+	response := marketDiagnosticsResponse{
+		Market:          market.Symbol,
+		AssetAddress:    strings.ToLower(market.AssetAddress),
+		SubID:           market.SubID,
+		ContractType:    market.ContractType,
+		SettlementType:  market.SettlementType,
+		LoadedInMatcher: market.Enabled,
+	}
+
+	if s.pool == nil || s.orders == nil || market.AssetAddress == "" {
+		return response
+	}
+
+	diagnostics, err := s.orders.GetMarketDiagnostics(ctx, market.AssetAddress, market.SubID)
+	if err != nil {
+		slog.Error("load market diagnostics", "market", market.Symbol, "error", err)
+		return response
+	}
+
+	response.OpenBidCount = diagnostics.OpenBidCount
+	response.OpenAskCount = diagnostics.OpenAskCount
+	response.TradeCount = diagnostics.TradeCount
+	if diagnostics.LastTradeTimestamp != nil {
+		timestamp := diagnostics.LastTradeTimestamp.Unix()
+		response.LastTradeTimestamp = &timestamp
+	}
+
+	return response
 }
 
 func presentOrder(order orders.Order, instrument instruments.Metadata) presentedOrder {
@@ -529,33 +629,51 @@ func presentOrder(order orders.Order, instrument instruments.Metadata) presented
 
 func presentMarket(market instruments.Metadata) marketPresentation {
 	return marketPresentation{
-		Market:             market.Symbol,
-		ContractType:       market.ContractType,
-		SettlementType:     market.SettlementType,
-		BaseAssetSymbol:    market.BaseAssetSymbol,
-		QuoteAssetSymbol:   market.QuoteAssetSymbol,
-		ExpiryTimestamp:    market.ExpiryTimestamp,
-		LastTradeTimestamp: market.LastTradeTimestamp,
-		PriceSemantics:     market.PriceSemantics,
-		DisplaySemantics:   market.DisplaySemantics,
-		DisplayName:        market.DisplayName,
-		DisplayLabel:       market.DisplayLabel,
-		TickSize:           market.TickSize,
-		SettlementNote:     market.SettlementNote,
-		PricingModel:       market.PricingModel,
-		DisplayPriceKind:   market.DisplayPriceKind,
-		AssetAddress:       strings.ToLower(market.AssetAddress),
-		SubID:              market.SubID,
-		OrderEntrySpec:     market.OrderEntrySpec,
-		UIPriceUnit:        market.UIPriceUnit,
-		UISizeUnit:         market.UISizeUnit,
-		UISideMeaning:      market.UISideMeaning,
-		EnginePriceUnit:    market.EnginePriceUnit,
-		EngineAmountUnit:   market.EngineAmountUnit,
-		EngineSidePolicy:   market.EngineSidePolicy,
-		UIPriceToEngine:    market.UIPriceToEngine,
-		UISizeToEngine:     market.UISizeToEngine,
+		Market:           market.Symbol,
+		ContractType:     market.ContractType,
+		SettlementType:   market.SettlementType,
+		BaseAssetSymbol:  market.BaseAssetSymbol,
+		QuoteAssetSymbol: market.QuoteAssetSymbol,
+		ExpiryTimestamp:  market.ExpiryTimestamp,
+		PriceSemantics:   market.PriceSemantics,
+		DisplaySemantics: market.DisplaySemantics,
+		DisplayName:      market.DisplayName,
+		DisplayLabel:     market.DisplayLabel,
+		TickSize:         market.TickSize,
+		SettlementNote:   market.SettlementNote,
+		PricingModel:     market.PricingModel,
+		DisplayPriceKind: market.DisplayPriceKind,
+		AssetAddress:     strings.ToLower(market.AssetAddress),
+		SubID:            market.SubID,
+		OrderEntrySpec:   market.OrderEntrySpec,
+		UIPriceUnit:      market.UIPriceUnit,
+		UISizeUnit:       market.UISizeUnit,
+		UISideMeaning:    market.UISideMeaning,
+		EnginePriceUnit:  market.EnginePriceUnit,
+		EngineAmountUnit: market.EngineAmountUnit,
+		EngineSidePolicy: market.EngineSidePolicy,
+		UIPriceToEngine:  market.UIPriceToEngine,
+		UISizeToEngine:   market.UISizeToEngine,
 	}
+}
+
+func (s *Server) presentMarket(ctx context.Context, market instruments.Metadata) marketPresentation {
+	presentation := presentMarket(market)
+	if s.pool == nil || s.orders == nil || market.AssetAddress == "" {
+		return presentation
+	}
+
+	diagnostics, err := s.orders.GetMarketDiagnostics(ctx, market.AssetAddress, market.SubID)
+	if err != nil {
+		slog.Error("load market trade state", "market", market.Symbol, "error", err)
+		return presentation
+	}
+	if diagnostics.LastTradeTimestamp != nil {
+		timestamp := diagnostics.LastTradeTimestamp.Unix()
+		presentation.LastTradeTimestamp = &timestamp
+	}
+
+	return presentation
 }
 
 func decorateBTCVar30OraclePayload(payload oraclemodule.Payload) oraclePayloadResponse {

@@ -35,6 +35,102 @@ func openTestPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+func TestHandleBookAndTradesReturnEmptyArraysNotNull(t *testing.T) {
+	pool := openTestPool(t)
+	assetAddress := "0xfeed000000000000000000000000000000000777"
+
+	registry := instruments.DefaultRegistry(config.Config{
+		CNGNSpotAssetAddress:          "0xfeed000000000000000000000000000000000998",
+		CNGNApr2026FutureAssetAddress: assetAddress,
+		CNGNApr2026FutureSubID:        "1777507200",
+	})
+	server := NewServer(config.Config{}, pool, registry, nil)
+
+	bookReq := httptest.NewRequest(http.MethodGet, "/v1/book?asset_address="+assetAddress+"&sub_id=1777507200", nil)
+	bookRec := httptest.NewRecorder()
+	server.handleBook(bookRec, bookReq)
+
+	if bookRec.Code != http.StatusOK {
+		t.Fatalf("book status = %d body=%s", bookRec.Code, bookRec.Body.String())
+	}
+	if bytes.Contains(bookRec.Body.Bytes(), []byte(`"bids":null`)) || bytes.Contains(bookRec.Body.Bytes(), []byte(`"asks":null`)) {
+		t.Fatalf("expected empty arrays in book response, got %s", bookRec.Body.String())
+	}
+
+	var bookResp bookResponse
+	if err := json.Unmarshal(bookRec.Body.Bytes(), &bookResp); err != nil {
+		t.Fatalf("unmarshal book response: %v", err)
+	}
+	if bookResp.MarketPresentation.LastTradeTimestamp != nil {
+		t.Fatalf("expected null last_trade_timestamp in empty book response, got %v", *bookResp.MarketPresentation.LastTradeTimestamp)
+	}
+
+	tradesReq := httptest.NewRequest(http.MethodGet, "/v1/trades?asset_address="+assetAddress+"&sub_id=1777507200", nil)
+	tradesRec := httptest.NewRecorder()
+	server.handleTrades(tradesRec, tradesReq)
+
+	if tradesRec.Code != http.StatusOK {
+		t.Fatalf("trades status = %d body=%s", tradesRec.Code, tradesRec.Body.String())
+	}
+	if bytes.Contains(tradesRec.Body.Bytes(), []byte(`"trades":null`)) {
+		t.Fatalf("expected empty arrays in trades response, got %s", tradesRec.Body.String())
+	}
+
+	var tradesResp tradesResponse
+	if err := json.Unmarshal(tradesRec.Body.Bytes(), &tradesResp); err != nil {
+		t.Fatalf("unmarshal trades response: %v", err)
+	}
+	if tradesResp.MarketPresentation.LastTradeTimestamp != nil {
+		t.Fatalf("expected null last_trade_timestamp in empty trades response, got %v", *tradesResp.MarketPresentation.LastTradeTimestamp)
+	}
+}
+
+func TestHandleMarketDiagnosticsReportsRegisteredEmptyFuture(t *testing.T) {
+	pool := openTestPool(t)
+	assetAddress := "0xfeed000000000000000000000000000000000776"
+
+	registry := instruments.DefaultRegistry(config.Config{
+		CNGNSpotAssetAddress:          "0xfeed000000000000000000000000000000000998",
+		CNGNApr2026FutureAssetAddress: assetAddress,
+		CNGNApr2026FutureSubID:        "1777507200",
+	})
+	server := NewServer(config.Config{}, pool, registry, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/markets", nil)
+	rec := httptest.NewRecorder()
+	server.handleMarketDiagnostics(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var diagnostics []marketDiagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &diagnostics); err != nil {
+		t.Fatalf("unmarshal diagnostics: %v", err)
+	}
+
+	var future *marketDiagnosticsResponse
+	for i := range diagnostics {
+		if diagnostics[i].Market == instruments.CNGNApr2026Symbol {
+			future = &diagnostics[i]
+			break
+		}
+	}
+
+	if future == nil {
+		t.Fatal("future market missing from diagnostics response")
+	}
+	if !future.LoadedInMatcher {
+		t.Fatal("expected future to be marked loaded in matcher")
+	}
+	if future.OpenBidCount != 0 || future.OpenAskCount != 0 || future.TradeCount != 0 {
+		t.Fatalf("unexpected diagnostics %+v", *future)
+	}
+	if future.LastTradeTimestamp != nil {
+		t.Fatalf("expected nil last trade timestamp, got %+v", *future)
+	}
+}
+
 func TestHandleBookReturnsSpotBookForUSDCCNGN(t *testing.T) {
 	pool := openTestPool(t)
 	ctx := context.Background()
@@ -113,16 +209,16 @@ func TestSpotUIOrderEndToEndPathEchoesNormalizedContract(t *testing.T) {
 	repo := orderrepo.NewRepository(pool)
 
 	createPayload := map[string]any{
-		"order_id":        suffix + "-ui-buy",
-		"owner_address":   "0xabc",
-		"signer_address":  "0xabc",
-		"subaccount_id":   "10",
-		"recipient_id":    "10",
-		"nonce":           "1",
-		"asset_address":   assetAddress,
-		"sub_id":          "0",
-		"worst_fee":       "1",
-		"expiry":          time.Now().Add(time.Hour).Unix(),
+		"order_id":         suffix + "-ui-buy",
+		"owner_address":    "0xabc",
+		"signer_address":   "0xabc",
+		"subaccount_id":    "10",
+		"recipient_id":     "10",
+		"nonce":            "1",
+		"asset_address":    assetAddress,
+		"sub_id":           "0",
+		"worst_fee":        "1",
+		"expiry":           time.Now().Add(time.Hour).Unix(),
 		"order_entry_spec": spotOrderEntrySpec,
 		"ui_intent": map[string]any{
 			"side":  "buy",
