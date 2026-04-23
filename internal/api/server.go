@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
+	"math/big"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -32,6 +36,7 @@ type Server struct {
 	orders      *orders.Repository
 	instruments *instruments.Registry
 	oracle      oracleReader
+	custody     custodyChecker
 }
 
 type marketPresentation struct {
@@ -100,6 +105,15 @@ type presentedOrder struct {
 
 type orderResponse struct {
 	Order presentedOrder `json:"order"`
+}
+
+type orderStatusResponse struct {
+	OrderID         string        `json:"order_id"`
+	Status          orders.Status `json:"status"`
+	FilledAmount    string        `json:"filled_amount"`
+	RemainingAmount string        `json:"remaining_amount"`
+	CancelReason    string        `json:"cancel_reason"`
+	UpdatedAt       time.Time     `json:"updated_at"`
 }
 
 type bookResponse struct {
@@ -186,6 +200,7 @@ func NewServer(cfg config.Config, pool *pgxpool.Pool, registry *instruments.Regi
 		orders:      orders.NewRepository(pool),
 		instruments: registry,
 		oracle:      oracle,
+		custody:     newCustodyChecker(cfg),
 	}
 }
 
@@ -195,6 +210,7 @@ func (s *Server) Run() error {
 	router.Get("/v1/markets", s.handleMarkets)
 	router.Get("/v1/book", s.handleBook)
 	router.Get("/v1/trades", s.handleTrades)
+	router.Get("/v1/orders/{order_id}", s.handleGetOrderStatus)
 	router.Get("/debug/markets", s.handleMarketDiagnostics)
 	router.Post("/v1/orders", s.handleCreateOrder)
 	router.Post("/v1/orders/cancel", s.handleCancelOrder)
@@ -202,6 +218,13 @@ func (s *Server) Run() error {
 	router.Get("/oracle/btcvar30/history", s.handleBTCVar30History)
 
 	s.logRegisteredMarkets()
+	slog.Info(
+		"custody_guard_config",
+		"enabled", s.custody != nil,
+		"enforce_matching_custody", s.cfg.EnforceMatchingCustody,
+		"matching_address", strings.ToLower(strings.TrimSpace(s.cfg.MatchingAddress)),
+		"chain_rpc_configured", strings.TrimSpace(s.cfg.ChainRPCURL) != "",
+	)
 	slog.Info("api listening", "addr", s.cfg.APIAddr)
 	return http.ListenAndServe(s.cfg.APIAddr, router)
 }
@@ -304,6 +327,41 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleGetOrderStatus(w http.ResponseWriter, r *http.Request) {
+	orderID := strings.TrimSpace(chi.URLParam(r, "order_id"))
+	if orderID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "order_id is required"})
+		return
+	}
+
+	snapshot, err := s.orders.GetOrderStatusSnapshot(r.Context(), orderID)
+	if err != nil {
+		if errors.Is(err, orders.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "order not found"})
+			return
+		}
+		slog.Error("load order status", "order_id", orderID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load order"})
+		return
+	}
+
+	remaining, err := remainingAmountString(snapshot.DesiredAmount, snapshot.FilledAmount)
+	if err != nil {
+		slog.Error("compute remaining amount", "order_id", orderID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to compute remaining amount"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, orderStatusResponse{
+		OrderID:         snapshot.OrderID,
+		Status:          snapshot.Status,
+		FilledAmount:    snapshot.FilledAmount,
+		RemainingAmount: remaining,
+		CancelReason:    snapshot.CancelReason,
+		UpdatedAt:       snapshot.UpdatedAt.UTC(),
+	})
+}
+
 func (s *Server) handleMarketDiagnostics(w http.ResponseWriter, r *http.Request) {
 	if s.instruments == nil {
 		writeJSON(w, http.StatusOK, []marketDiagnosticsResponse{})
@@ -335,6 +393,13 @@ func (s *Server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if s.custody != nil {
+		if err := s.custody.ValidateDeposited(r.Context(), params.SubaccountID); err != nil {
+			slog.Warn("order_submit_rejected_custody", "order_id", params.OrderID, "subaccount_id", params.SubaccountID, "error", err)
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 
 	order, err := s.orders.Create(r.Context(), params)
 	if err != nil {
@@ -365,21 +430,63 @@ func (s *Server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
 	var req cancelOrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
+
+	requester := resolveCancelRequester(r)
+	sourceIP := resolveSourceIP(r)
+	internal := cancelInternalHeaders(r)
+	slog.Info(
+		"order_cancel_request",
+		"body", string(body),
+		"requester", requester,
+		"service", strings.TrimSpace(req.Service),
+		"user_agent", r.UserAgent(),
+		"source_ip", sourceIP,
+		"internal_headers", internal,
+	)
 
 	if err := req.validate(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
-	order, err := s.orders.CancelByOwnerNonce(r.Context(), orders.CancelOrderParams{
+	cancelParams := orders.CancelOrderParams{
 		OwnerAddress: strings.ToLower(req.OwnerAddress),
 		Nonce:        req.Nonce,
-	})
+	}
+	targetOrder, err := s.orders.FindActiveByOwnerNonce(r.Context(), cancelParams)
+	if err != nil {
+		if errors.Is(err, orders.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "active order not found"})
+			return
+		}
+		slog.Error("load cancel target", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve cancel target"})
+		return
+	}
+	if err := s.validateCancelNamespace(req, targetOrder); err != nil {
+		slog.Warn(
+			"cancel_namespace_violation",
+			"order_id", targetOrder.OrderID,
+			"service", strings.TrimSpace(req.Service),
+			"reason", strings.TrimSpace(req.Reason),
+			"error", err,
+		)
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+
+	order, err := s.orders.CancelByOwnerNonce(r.Context(), cancelParams)
 	if err != nil {
 		if errors.Is(err, orders.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "active order not found"})
@@ -390,8 +497,107 @@ func (s *Server) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		reason = "unspecified"
+	}
+	slog.Info(
+		"order_cancel_trace",
+		"order_id", order.OrderID,
+		"owner", order.OwnerAddress,
+		"request_owner", strings.ToLower(req.OwnerAddress),
+		"requester", requester,
+		"service", strings.TrimSpace(req.Service),
+		"user_agent", r.UserAgent(),
+		"source_ip", sourceIP,
+		"internal_headers", internal,
+		"reason", reason,
+	)
+
 	instrument, _ := s.instruments.ByAssetAndSubID(strings.ToLower(order.AssetAddress), order.SubID)
 	writeJSON(w, http.StatusOK, orderResponse{Order: presentOrder(order, instrument)})
+}
+
+func (s *Server) validateCancelNamespace(req cancelOrderRequest, target orders.Order) error {
+	service := strings.TrimSpace(req.Service)
+	if service == "" {
+		return nil
+	}
+	orderID := strings.ToLower(strings.TrimSpace(target.OrderID))
+	for _, prefix := range s.cfg.CancelProtectedOrderPrefixes {
+		if strings.HasPrefix(orderID, prefix) {
+			return fmt.Errorf("service-tagged cancels are not allowed for protected namespace %q", prefix)
+		}
+	}
+	return nil
+}
+
+func resolveCancelRequester(r *http.Request) string {
+	candidates := []string{
+		"X-Principal",
+		"X-Authenticated-User",
+		"X-Forwarded-User",
+		"X-User",
+		"X-User-ID",
+	}
+	for _, key := range candidates {
+		if value := strings.TrimSpace(r.Header.Get(key)); value != "" {
+			return value
+		}
+	}
+	if value := strings.TrimSpace(r.Header.Get("Authorization")); value != "" {
+		parts := strings.Fields(value)
+		if len(parts) > 0 {
+			return strings.ToLower(parts[0]) + "_token"
+		}
+		return "authorization_present"
+	}
+	return "anonymous"
+}
+
+func resolveSourceIP(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		if parts := strings.Split(forwarded, ","); len(parts) > 0 {
+			if ip := strings.TrimSpace(parts[0]); ip != "" {
+				return ip
+			}
+		}
+	}
+	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+		return realIP
+	}
+	if cfIP := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cfIP != "" {
+		return cfIP
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func cancelInternalHeaders(r *http.Request) map[string]string {
+	keys := []string{
+		"X-Forwarded-For",
+		"X-Real-IP",
+		"X-Forwarded-Proto",
+		"X-Forwarded-Host",
+		"X-Forwarded-Port",
+		"X-Envoy-External-Address",
+		"X-Request-ID",
+		"X-Railway-Edge",
+		"X-Railway-Request-ID",
+		"Fly-Client-IP",
+		"CF-Connecting-IP",
+		"True-Client-IP",
+	}
+	headers := make(map[string]string)
+	for _, key := range keys {
+		if value := strings.TrimSpace(r.Header.Get(key)); value != "" {
+			headers[key] = value
+		}
+	}
+	return headers
 }
 
 func (s *Server) handleBTCVar30Latest(w http.ResponseWriter, _ *http.Request) {
@@ -477,6 +683,22 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func remainingAmountString(desired string, filled string) (string, error) {
+	desiredInt, ok := new(big.Int).SetString(strings.TrimSpace(desired), 10)
+	if !ok {
+		return "", fmt.Errorf("invalid desired amount")
+	}
+	filledInt, ok := new(big.Int).SetString(strings.TrimSpace(filled), 10)
+	if !ok {
+		return "", fmt.Errorf("invalid filled amount")
+	}
+	remaining := new(big.Int).Sub(desiredInt, filledInt)
+	if remaining.Sign() < 0 {
+		return "", fmt.Errorf("filled amount exceeds desired amount")
+	}
+	return remaining.String(), nil
 }
 
 func presentOrders(items []orders.Order, instrument instruments.Metadata) []presentedOrder {

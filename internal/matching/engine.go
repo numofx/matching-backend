@@ -144,6 +144,26 @@ func (e *Engine) tickInstrument(ctx context.Context, instrument instruments.Meta
 		return
 	}
 
+	executionFill, err := computeExecutionUnits(instrument, *candidate, fillPrice, fillAmount)
+	if err != nil {
+		slog.Error(
+			"match_trace_invariant_failed",
+			"market", instrument.Symbol,
+			"asset_address", strings.ToLower(instrument.AssetAddress),
+			"sub_id", instrument.SubID,
+			"taker_order_id", candidate.Taker.OrderID,
+			"maker_order_id", candidate.Maker.OrderID,
+			"fill_price_ticks", fillPrice,
+			"fill_amount_atomic", fillAmount,
+			"error", err,
+		)
+
+		reconcileCtx, cancel := detachedContext(ctx, reconciliationTimeout)
+		defer cancel()
+		_ = e.orders.MarkMatchFailed(reconcileCtx, []string{candidate.Taker.OrderID, candidate.Maker.OrderID}, err.Error())
+		return
+	}
+
 	slog.Info(
 		"match_trace_executor_submit",
 		"market", instrument.Symbol,
@@ -152,9 +172,11 @@ func (e *Engine) tickInstrument(ctx context.Context, instrument instruments.Meta
 		"taker_order_id", candidate.Taker.OrderID,
 		"maker_order_id", candidate.Maker.OrderID,
 		"fill_price_ticks", fillPrice,
-		"fill_amount", fillAmount,
+		"fill_amount_atomic", fillAmount,
+		"executor_fill_price", executionFill.FillPrice,
+		"executor_fill_amount", executionFill.FillAmount,
 	)
-	executorResp, err := e.executor.SubmitMatchForMarket(ctx, instrument.Symbol, *candidate, fillPrice, fillAmount)
+	executorResp, err := e.executor.SubmitMatchForMarket(ctx, instrument.Symbol, *candidate, executionFill.FillPrice, executionFill.FillAmount)
 	if err != nil {
 		reconcileCtx, cancel := detachedContext(ctx, reconciliationTimeout)
 		defer cancel()

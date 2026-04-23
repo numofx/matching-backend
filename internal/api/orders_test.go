@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"testing"
 	"time"
 
@@ -385,4 +387,128 @@ func TestCreateOrderRequestToParamsRejectsZeroNormalizedAtomicSize(t *testing.T)
 	if err == nil || err.Error() != "normalized atomic size is 0" {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestCreateOrderRequestToParamsEnforcesActionDataScaleInvariant(t *testing.T) {
+	asset := "0xce2846771074e20fec739cf97a60e6075d1e464b"
+	req := createOrderRequest{
+		OrderID:       "order-apr-scale-check",
+		OwnerAddress:  "0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+		SignerAddress: "0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+		SubaccountID:  "7",
+		RecipientID:   "7",
+		Nonce:         "11",
+		Side:          "buy",
+		AssetAddress:  asset,
+		SubID:         "1777507200",
+		DesiredAmount: "0.001",
+		FilledAmount:  "0",
+		LimitPrice:    "1391",
+		WorstFee:      "0",
+		Expiry:        time.Now().Add(time.Hour).Unix(),
+		ActionJSON: json.RawMessage(`{
+			"subaccount_id":"7",
+			"nonce":"11",
+			"module":"0x0aae65aaa66fe7f54486cdbd007956d3de611990",
+			"data":"` + mustTradeDataHex(asset, "1777507200", "1391000000000000000000", "1000000000000000", true) + `",
+			"expiry":"1777507200",
+			"owner":"0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+			"signer":"0xc7be60b228b997c23094ddfdd71e22e2de6c9310"
+		}`),
+		Signature: "0xsig",
+	}
+
+	params, err := req.toParams(config.Config{
+		CNGNApr2026FutureAssetAddress: asset,
+		CNGNApr2026FutureSubID:        "1777507200",
+		EnforceActionDataInvariants:   true,
+	})
+	if err != nil {
+		t.Fatalf("toParams returned error: %v", err)
+	}
+	if params.LimitPriceTicks != "1391" || params.DesiredAmount != "1" {
+		t.Fatalf("unexpected normalized params %+v", params)
+	}
+}
+
+func TestCreateOrderRequestToParamsRejectsActionDataScaleMismatch(t *testing.T) {
+	asset := "0xce2846771074e20fec739cf97a60e6075d1e464b"
+	req := createOrderRequest{
+		OrderID:       "order-apr-scale-mismatch",
+		OwnerAddress:  "0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+		SignerAddress: "0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+		SubaccountID:  "7",
+		RecipientID:   "7",
+		Nonce:         "12",
+		Side:          "buy",
+		AssetAddress:  asset,
+		SubID:         "1777507200",
+		DesiredAmount: "0.002",
+		FilledAmount:  "0",
+		LimitPrice:    "1391",
+		WorstFee:      "0",
+		Expiry:        time.Now().Add(time.Hour).Unix(),
+		ActionJSON: json.RawMessage(`{
+			"subaccount_id":"7",
+			"nonce":"12",
+			"module":"0x0aae65aaa66fe7f54486cdbd007956d3de611990",
+			"data":"` + mustTradeDataHex(asset, "1777507200", "1391000000000000000000", "1000000000000001", true) + `",
+			"expiry":"1777507200",
+			"owner":"0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+			"signer":"0xc7be60b228b997c23094ddfdd71e22e2de6c9310"
+		}`),
+		Signature: "0xsig",
+	}
+
+	_, err := req.toParams(config.Config{
+		CNGNApr2026FutureAssetAddress: asset,
+		CNGNApr2026FutureSubID:        "1777507200",
+		EnforceActionDataInvariants:   true,
+	})
+	if err == nil || err.Error() != "action_json.data.desiredAmount is not aligned with normalized desired_amount" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func mustTradeDataHex(asset string, subID string, limitPrice string, desiredAmount string, isBid bool) string {
+	var out []byte
+	out = append(out, encodeAddressWord(asset)...)
+	out = append(out, encodeUnsignedWord(subID)...)
+	out = append(out, encodeSignedWord(limitPrice)...)
+	out = append(out, encodeSignedWord(desiredAmount)...)
+	out = append(out, encodeUnsignedWord("0")...)
+	out = append(out, encodeUnsignedWord("7")...)
+	if isBid {
+		out = append(out, encodeUnsignedWord("1")...)
+	} else {
+		out = append(out, encodeUnsignedWord("0")...)
+	}
+	return "0x" + hex.EncodeToString(out)
+}
+
+func encodeAddressWord(address string) []byte {
+	raw, _ := hex.DecodeString(address[2:])
+	word := make([]byte, 32)
+	copy(word[12:], raw)
+	return word
+}
+
+func encodeUnsignedWord(value string) []byte {
+	n, _ := new(big.Int).SetString(value, 10)
+	word := make([]byte, 32)
+	bytes := n.Bytes()
+	copy(word[32-len(bytes):], bytes)
+	return word
+}
+
+func encodeSignedWord(value string) []byte {
+	n, _ := new(big.Int).SetString(value, 10)
+	if n.Sign() < 0 {
+		mod := new(big.Int).Lsh(big.NewInt(1), 256)
+		n = n.Add(n, mod)
+	}
+	word := make([]byte, 32)
+	bytes := n.Bytes()
+	copy(word[32-len(bytes):], bytes)
+	return word
 }

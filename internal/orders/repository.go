@@ -43,6 +43,7 @@ type CreateOrderParams struct {
 type CancelOrderParams struct {
 	OwnerAddress string
 	Nonce        string
+	Reason       string
 }
 
 type MatchCandidate struct {
@@ -55,6 +56,15 @@ type MarketDiagnostics struct {
 	OpenAskCount       int32
 	TradeCount         int64
 	LastTradeTimestamp *time.Time
+}
+
+type OrderStatusSnapshot struct {
+	OrderID       string
+	Status        Status
+	DesiredAmount string
+	FilledAmount  string
+	CancelReason  string
+	UpdatedAt     time.Time
 }
 
 type Repository struct {
@@ -70,7 +80,7 @@ func (r *Repository) BackfillLimitPriceTicks(ctx context.Context, registry *inst
 		return fmt.Errorf("instrument registry is required for limit price backfill")
 	}
 
-const query = `
+	const query = `
 select order_id, asset_address, sub_id, limit_price
 from active_orders
 where limit_price_ticks is null
@@ -240,6 +250,75 @@ returning order_id, owner_address, signer_address, subaccount_id, recipient_id, 
 	}
 
 	return order, nil
+}
+
+func (r *Repository) FindActiveByOwnerNonce(ctx context.Context, params CancelOrderParams) (Order, error) {
+	const query = `
+select order_id, owner_address, signer_address, subaccount_id, recipient_id, nonce, side, asset_address, sub_id,
+          desired_amount, filled_amount, limit_price, limit_price_ticks, worst_fee, expiry, action_json, signature, status, created_at
+from active_orders
+where owner_address = $1 and nonce = $2 and status = 'active'
+`
+
+	order := Order{}
+	if err := r.pool.QueryRow(ctx, query, params.OwnerAddress, params.Nonce).Scan(
+		&order.OrderID,
+		&order.OwnerAddress,
+		&order.SignerAddress,
+		&order.SubaccountID,
+		&order.RecipientID,
+		&order.Nonce,
+		&order.Side,
+		&order.AssetAddress,
+		&order.SubID,
+		&order.DesiredAmount,
+		&order.FilledAmount,
+		&order.LimitPrice,
+		&order.LimitPriceTicks,
+		&order.WorstFee,
+		&order.Expiry,
+		&order.ActionJSON,
+		&order.Signature,
+		&order.Status,
+		&order.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Order{}, ErrNotFound
+		}
+		return Order{}, mapPGError(err)
+	}
+
+	return order, nil
+}
+
+func (r *Repository) GetOrderStatusSnapshot(ctx context.Context, orderID string) (OrderStatusSnapshot, error) {
+	const query = `
+select
+  order_id,
+  status,
+  desired_amount,
+  filled_amount,
+  ''::text as cancel_reason,
+  created_at as updated_at
+from active_orders
+where order_id = $1
+`
+
+	var snapshot OrderStatusSnapshot
+	if err := r.pool.QueryRow(ctx, query, strings.TrimSpace(orderID)).Scan(
+		&snapshot.OrderID,
+		&snapshot.Status,
+		&snapshot.DesiredAmount,
+		&snapshot.FilledAmount,
+		&snapshot.CancelReason,
+		&snapshot.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OrderStatusSnapshot{}, ErrNotFound
+		}
+		return OrderStatusSnapshot{}, mapPGError(err)
+	}
+	return snapshot, nil
 }
 
 func (r *Repository) ListBook(ctx context.Context, assetAddress string, subID string, limit int32) ([]Order, []Order, error) {

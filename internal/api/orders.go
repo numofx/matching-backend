@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -15,24 +16,24 @@ import (
 )
 
 type createOrderRequest struct {
-	OrderID       string          `json:"order_id"`
-	OwnerAddress  string          `json:"owner_address"`
-	SignerAddress string          `json:"signer_address"`
-	SubaccountID  string          `json:"subaccount_id"`
-	RecipientID   string          `json:"recipient_id"`
-	Nonce         string          `json:"nonce"`
-	Side          string          `json:"side"`
-	AssetAddress  string          `json:"asset_address"`
-	SubID         string          `json:"sub_id"`
-	DesiredAmount string          `json:"desired_amount"`
-	FilledAmount  string          `json:"filled_amount"`
-	LimitPrice    string          `json:"limit_price"`
-	WorstFee      string          `json:"worst_fee"`
-	Expiry        int64           `json:"expiry"`
+	OrderID        string           `json:"order_id"`
+	OwnerAddress   string           `json:"owner_address"`
+	SignerAddress  string           `json:"signer_address"`
+	SubaccountID   string           `json:"subaccount_id"`
+	RecipientID    string           `json:"recipient_id"`
+	Nonce          string           `json:"nonce"`
+	Side           string           `json:"side"`
+	AssetAddress   string           `json:"asset_address"`
+	SubID          string           `json:"sub_id"`
+	DesiredAmount  string           `json:"desired_amount"`
+	FilledAmount   string           `json:"filled_amount"`
+	LimitPrice     string           `json:"limit_price"`
+	WorstFee       string           `json:"worst_fee"`
+	Expiry         int64            `json:"expiry"`
 	OrderEntrySpec string           `json:"order_entry_spec,omitempty"`
 	UIIntent       *spotOrderIntent `json:"ui_intent,omitempty"`
-	ActionJSON    json.RawMessage `json:"action_json"`
-	Signature     string          `json:"signature"`
+	ActionJSON     json.RawMessage  `json:"action_json"`
+	Signature      string           `json:"signature"`
 }
 
 func (r createOrderRequest) toParams(cfg config.Config) (orders.CreateOrderParams, error) {
@@ -159,6 +160,11 @@ func (r createOrderRequest) toParams(cfg config.Config) (orders.CreateOrderParam
 	if err := validateActionJSON(r.ActionJSON, ownerAddress, signerAddress, r.SubaccountID, r.Nonce); err != nil {
 		return orders.CreateOrderParams{}, err
 	}
+	if cfg.EnforceActionDataInvariants {
+		if err := validateActionDataInvariants(r.ActionJSON, side, assetAddress, subID, limitPriceTicks, normalizedDesiredAmount); err != nil {
+			return orders.CreateOrderParams{}, err
+		}
+	}
 
 	return orders.CreateOrderParams{
 		OrderID:         r.OrderID,
@@ -258,6 +264,8 @@ func compareIntegerStrings(a string, b string) (int, error) {
 type cancelOrderRequest struct {
 	OwnerAddress string `json:"owner_address"`
 	Nonce        string `json:"nonce"`
+	Reason       string `json:"reason"`
+	Service      string `json:"service"`
 }
 
 func (r cancelOrderRequest) validate() error {
@@ -277,6 +285,117 @@ func isAllowedInstrument(cfg config.Config, assetAddress string, subID string) b
 	}
 	_, ok := registry.ByAssetAndSubID(assetAddress, subID)
 	return ok
+}
+
+type parsedTradeActionData struct {
+	AssetAddress  string
+	SubID         string
+	LimitPrice    *big.Int
+	DesiredAmount *big.Int
+	IsBid         bool
+}
+
+func validateActionDataInvariants(raw json.RawMessage, side orders.Side, assetAddress string, subID string, limitPriceTicks string, desiredAmountAtomic string) error {
+	action, err := parseActionTradeData(raw)
+	if err != nil {
+		return fmt.Errorf("action_json.data invariant check failed: %w", err)
+	}
+	if action.AssetAddress != strings.ToLower(assetAddress) {
+		return fmt.Errorf("action_json.data.asset must match asset_address")
+	}
+	if action.SubID != strings.TrimSpace(subID) {
+		return fmt.Errorf("action_json.data.subId must match sub_id")
+	}
+
+	expectBid := side == orders.SideBuy
+	if action.IsBid != expectBid {
+		return fmt.Errorf("action_json.data.isBid must match side")
+	}
+
+	priceTicksInt, err := parsePositiveIntString(limitPriceTicks, "limit_price_ticks")
+	if err != nil {
+		return err
+	}
+	desiredAtomicInt, err := parsePositiveIntString(desiredAmountAtomic, "desired_amount")
+	if err != nil {
+		return err
+	}
+
+	priceScale, priceRem := new(big.Int).QuoRem(action.LimitPrice, priceTicksInt, new(big.Int))
+	if priceRem.Sign() != 0 || priceScale.Sign() <= 0 {
+		return fmt.Errorf("action_json.data.limitPrice is not aligned with normalized limit_price")
+	}
+	amountScale, amountRem := new(big.Int).QuoRem(action.DesiredAmount, desiredAtomicInt, new(big.Int))
+	if amountRem.Sign() != 0 || amountScale.Sign() <= 0 {
+		return fmt.Errorf("action_json.data.desiredAmount is not aligned with normalized desired_amount")
+	}
+	return nil
+}
+
+func parseActionTradeData(raw json.RawMessage) (parsedTradeActionData, error) {
+	var action struct {
+		Data string `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &action); err != nil {
+		return parsedTradeActionData{}, fmt.Errorf("parse action_json: %w", err)
+	}
+	hexValue := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(action.Data)), "0x")
+	if len(hexValue) != 64*7 {
+		return parsedTradeActionData{}, fmt.Errorf("expected encoded TradeData tuple")
+	}
+	payload, err := hex.DecodeString(hexValue)
+	if err != nil {
+		return parsedTradeActionData{}, fmt.Errorf("decode action_json.data: %w", err)
+	}
+
+	word := func(i int) []byte {
+		start := i * 32
+		return payload[start : start+32]
+	}
+
+	assetAddress := "0x" + hex.EncodeToString(word(0)[12:])
+	subID := new(big.Int).SetBytes(word(1)).String()
+	limitPrice := signedWordToBigInt(word(2))
+	desiredAmount := signedWordToBigInt(word(3))
+	isBid := new(big.Int).SetBytes(word(6)).Cmp(big.NewInt(0)) != 0
+
+	if limitPrice.Sign() <= 0 {
+		return parsedTradeActionData{}, fmt.Errorf("action_json.data.limitPrice must be positive")
+	}
+	if desiredAmount.Sign() <= 0 {
+		return parsedTradeActionData{}, fmt.Errorf("action_json.data.desiredAmount must be positive")
+	}
+
+	return parsedTradeActionData{
+		AssetAddress:  strings.ToLower(assetAddress),
+		SubID:         subID,
+		LimitPrice:    limitPrice,
+		DesiredAmount: desiredAmount,
+		IsBid:         isBid,
+	}, nil
+}
+
+func signedWordToBigInt(word []byte) *big.Int {
+	value := new(big.Int).SetBytes(word)
+	if len(word) != 32 {
+		return value
+	}
+	if word[0]&0x80 == 0 {
+		return value
+	}
+	two256 := new(big.Int).Lsh(big.NewInt(1), 256)
+	return value.Sub(value, two256)
+}
+
+func parsePositiveIntString(raw string, field string) (*big.Int, error) {
+	value, ok := new(big.Int).SetString(strings.TrimSpace(raw), 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid %s", field)
+	}
+	if value.Sign() <= 0 {
+		return nil, fmt.Errorf("%s must be positive", field)
+	}
+	return value, nil
 }
 
 func validateActionJSON(raw json.RawMessage, ownerAddress string, signerAddress string, subaccountID string, nonce string) error {

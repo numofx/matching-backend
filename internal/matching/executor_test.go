@@ -16,21 +16,21 @@ func TestBuildExecutorRequest(t *testing.T) {
 	candidate := orders.MatchCandidate{
 		Taker: orders.Order{
 			OrderID:       "taker-1",
-			OwnerAddress:  "0xowner1",
-			SignerAddress: "0xsigner1",
-			AssetAddress:  "0xabc",
+			OwnerAddress:  "0x1111111111111111111111111111111111111111",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
+			AssetAddress:  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			SubaccountID:  "10",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xtrade","data":"0xaaa","expiry":"100","owner":"0xowner1","signer":"0xsigner1"}`),
-			Signature:     "0xsig1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"0x1111111111111111111111111111111111111111","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
 			Nonce:         "1",
 		},
 		Maker: orders.Order{
 			OrderID:       "maker-1",
-			OwnerAddress:  "0xowner2",
-			SignerAddress: "0xsigner2",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
 			SubaccountID:  "11",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xtrade","data":"0xbbb","expiry":"100","owner":"0xowner2","signer":"0xsigner2"}`),
-			Signature:     "0xsig2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
 			Nonce:         "2",
 		},
 	}
@@ -67,21 +67,21 @@ func TestBuildExecutorRequestForBTCVar30Market(t *testing.T) {
 	candidate := orders.MatchCandidate{
 		Taker: orders.Order{
 			OrderID:       "taker-btcvar30",
-			OwnerAddress:  "0xowner1",
-			SignerAddress: "0xsigner1",
+			OwnerAddress:  "0x1111111111111111111111111111111111111111",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
 			AssetAddress:  "0x2222222222222222222222222222222222222222",
 			SubaccountID:  "501",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"501","nonce":"1","module":"0xtrade","data":"0xaaa","expiry":"100","owner":"0xowner1","signer":"0xsigner1"}`),
-			Signature:     "0xsig1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"501","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"0x1111111111111111111111111111111111111111","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
 			Nonce:         "1",
 		},
 		Maker: orders.Order{
 			OrderID:       "maker-btcvar30",
-			OwnerAddress:  "0xowner2",
-			SignerAddress: "0xsigner2",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
 			SubaccountID:  "502",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"502","nonce":"2","module":"0xtrade","data":"0xbbb","expiry":"100","owner":"0xowner2","signer":"0xsigner2"}`),
-			Signature:     "0xsig2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"502","nonce":"2","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
 			Nonce:         "2",
 		},
 	}
@@ -106,21 +106,21 @@ func TestBuildExecutorRequestForSpotMarket(t *testing.T) {
 	candidate := orders.MatchCandidate{
 		Taker: orders.Order{
 			OrderID:       "taker-spot",
-			OwnerAddress:  "0xowner1",
-			SignerAddress: "0xsigner1",
+			OwnerAddress:  "0x1111111111111111111111111111111111111111",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
 			AssetAddress:  "0x3333333333333333333333333333333333333333",
 			SubaccountID:  "601",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"601","nonce":"1","module":"0xtrade","data":"0xaaa","expiry":"100","owner":"0xowner1","signer":"0xsigner1"}`),
-			Signature:     "0xsig1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"601","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"0x1111111111111111111111111111111111111111","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
 			Nonce:         "1",
 		},
 		Maker: orders.Order{
 			OrderID:       "maker-spot",
-			OwnerAddress:  "0xowner2",
-			SignerAddress: "0xsigner2",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
 			SubaccountID:  "602",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"602","nonce":"2","module":"0xtrade","data":"0xbbb","expiry":"100","owner":"0xowner2","signer":"0xsigner2"}`),
-			Signature:     "0xsig2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"602","nonce":"2","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
 			Nonce:         "2",
 		},
 	}
@@ -145,21 +145,21 @@ func TestExecutorClientSubmitMatch(t *testing.T) {
 	candidate := orders.MatchCandidate{
 		Taker: orders.Order{
 			OrderID:       "taker-1",
-			OwnerAddress:  "0xowner1",
-			SignerAddress: "0xsigner1",
-			AssetAddress:  "0xabc",
+			OwnerAddress:  "0x1111111111111111111111111111111111111111",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
+			AssetAddress:  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			SubaccountID:  "10",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xtrade","data":"0xaaa","expiry":"100","owner":"0xowner1","signer":"0xsigner1"}`),
-			Signature:     "0xsig1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"0x1111111111111111111111111111111111111111","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
 			Nonce:         "1",
 		},
 		Maker: orders.Order{
 			OrderID:       "maker-1",
-			OwnerAddress:  "0xowner2",
-			SignerAddress: "0xsigner2",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
 			SubaccountID:  "11",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xtrade","data":"0xbbb","expiry":"100","owner":"0xowner2","signer":"0xsigner2"}`),
-			Signature:     "0xsig2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
 			Nonce:         "2",
 		},
 	}
@@ -216,22 +216,22 @@ func TestBuildExecutorRequestRejectsActionOwnerMismatch(t *testing.T) {
 	candidate := orders.MatchCandidate{
 		Taker: orders.Order{
 			OrderID:       "taker-1",
-			OwnerAddress:  "0xowner1",
-			SignerAddress: "0xsigner1",
-			AssetAddress:  "0xabc",
+			OwnerAddress:  "0x1111111111111111111111111111111111111111",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
+			AssetAddress:  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			SubaccountID:  "10",
 			Nonce:         "1",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xtrade","data":"0xaaa","expiry":"100","owner":"0xwrong","signer":"0xsigner1"}`),
-			Signature:     "0xsig1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"0x5555555555555555555555555555555555555555","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
 		},
 		Maker: orders.Order{
 			OrderID:       "maker-1",
-			OwnerAddress:  "0xowner2",
-			SignerAddress: "0xsigner2",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
 			SubaccountID:  "11",
 			Nonce:         "2",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xtrade","data":"0xbbb","expiry":"100","owner":"0xowner2","signer":"0xsigner2"}`),
-			Signature:     "0xsig2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
 		},
 	}
 
@@ -245,22 +245,22 @@ func TestBuildExecutorRequestDefaultsEmptyManagerData(t *testing.T) {
 	candidate := orders.MatchCandidate{
 		Taker: orders.Order{
 			OrderID:       "taker-1",
-			OwnerAddress:  "0xowner1",
-			SignerAddress: "0xsigner1",
-			AssetAddress:  "0xabc",
+			OwnerAddress:  "0x1111111111111111111111111111111111111111",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
+			AssetAddress:  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			SubaccountID:  "10",
 			Nonce:         "1",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xtrade","data":"0xaaa","expiry":"100","owner":"0xowner1","signer":"0xsigner1"}`),
-			Signature:     "0xsig1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"0x1111111111111111111111111111111111111111","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
 		},
 		Maker: orders.Order{
 			OrderID:       "maker-1",
-			OwnerAddress:  "0xowner2",
-			SignerAddress: "0xsigner2",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
 			SubaccountID:  "11",
 			Nonce:         "2",
-			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xtrade","data":"0xbbb","expiry":"100","owner":"0xowner2","signer":"0xsigner2"}`),
-			Signature:     "0xsig2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
 		},
 	}
 
@@ -270,6 +270,64 @@ func TestBuildExecutorRequestDefaultsEmptyManagerData(t *testing.T) {
 	}
 	if req.OrderData.ManagerData != "0x" {
 		t.Fatalf("manager data = %s", req.OrderData.ManagerData)
+	}
+}
+
+func TestBuildExecutorRequestRejectsNonAddressActionOwner(t *testing.T) {
+	candidate := orders.MatchCandidate{
+		Taker: orders.Order{
+			OrderID:       "taker-1",
+			OwnerAddress:  "owner-not-address",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
+			AssetAddress:  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			SubaccountID:  "10",
+			Nonce:         "1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"owner-not-address","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
+		},
+		Maker: orders.Order{
+			OrderID:       "maker-1",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
+			SubaccountID:  "11",
+			Nonce:         "2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
+		},
+	}
+
+	_, err := buildExecutorRequest("BTCUSDC-CVXPERP", candidate, "0x", "75", "3")
+	if err == nil || err.Error() != "parse taker action_json: owner must be a 20-byte 0x address" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildExecutorRequestRejectsMismatchedActionModules(t *testing.T) {
+	candidate := orders.MatchCandidate{
+		Taker: orders.Order{
+			OrderID:       "taker-1",
+			OwnerAddress:  "0x1111111111111111111111111111111111111111",
+			SignerAddress: "0x3333333333333333333333333333333333333333",
+			AssetAddress:  "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			SubaccountID:  "10",
+			Nonce:         "1",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"10","nonce":"1","module":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","data":"0xaaa","expiry":"100","owner":"0x1111111111111111111111111111111111111111","signer":"0x3333333333333333333333333333333333333333"}`),
+			Signature:     "0x01",
+		},
+		Maker: orders.Order{
+			OrderID:       "maker-1",
+			OwnerAddress:  "0x2222222222222222222222222222222222222222",
+			SignerAddress: "0x4444444444444444444444444444444444444444",
+			SubaccountID:  "11",
+			Nonce:         "2",
+			ActionJSON:    json.RawMessage(`{"subaccount_id":"11","nonce":"2","module":"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","data":"0xbbb","expiry":"100","owner":"0x2222222222222222222222222222222222222222","signer":"0x4444444444444444444444444444444444444444"}`),
+			Signature:     "0x02",
+		},
+	}
+
+	_, err := buildExecutorRequest("BTCUSDC-CVXPERP", candidate, "0x", "75", "3")
+	if err == nil || err.Error() != "maker module address mismatch: taker=0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa maker=0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

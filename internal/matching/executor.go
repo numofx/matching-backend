@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -52,6 +54,8 @@ type ExecutorResponse struct {
 	Error    string `json:"error"`
 }
 
+var evmAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
+
 func NewExecutorClient(url string, managerData string) *ExecutorClient {
 	return &ExecutorClient{
 		url:         strings.TrimSpace(url),
@@ -80,6 +84,16 @@ func (c *ExecutorClient) SubmitMatchForMarket(ctx context.Context, market string
 	if err != nil {
 		return ExecutorResponse{}, err
 	}
+	slog.Info(
+		"match_trace_executor_payload",
+		"executor_url", c.url,
+		"market", reqBody.Market,
+		"asset_address", reqBody.AssetAddress,
+		"module_address", reqBody.ModuleAddress,
+		"maker_order_id", reqBody.MakerOrderID,
+		"taker_order_id", reqBody.TakerOrderID,
+		"payload_json", string(payload),
+	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(payload))
 	if err != nil {
@@ -123,6 +137,10 @@ func (c *ExecutorClient) SubmitMatchForMarket(ctx context.Context, market string
 }
 
 func buildExecutorRequest(market string, candidate orders.MatchCandidate, managerData string, price string, amount string) (ExecutorRequest, error) {
+	if !isEVMAddress(candidate.Taker.AssetAddress) {
+		return ExecutorRequest{}, fmt.Errorf("invalid asset address %q", candidate.Taker.AssetAddress)
+	}
+
 	takerAction, err := normalizeAction(candidate.Taker)
 	if err != nil {
 		return ExecutorRequest{}, fmt.Errorf("parse taker action_json: %w", err)
@@ -132,10 +150,19 @@ func buildExecutorRequest(market string, candidate orders.MatchCandidate, manage
 		return ExecutorRequest{}, fmt.Errorf("parse maker action_json: %w", err)
 	}
 
+	moduleAddress := extractModuleAddress(takerAction)
+	if !isEVMAddress(moduleAddress) {
+		return ExecutorRequest{}, fmt.Errorf("invalid taker module address %q", moduleAddress)
+	}
+	makerModuleAddress := extractModuleAddress(makerAction)
+	if makerModuleAddress != moduleAddress {
+		return ExecutorRequest{}, fmt.Errorf("maker module address mismatch: taker=%s maker=%s", moduleAddress, makerModuleAddress)
+	}
+
 	return ExecutorRequest{
 		Market:        market,
 		AssetAddress:  strings.ToLower(candidate.Taker.AssetAddress),
-		ModuleAddress: extractModuleAddress(takerAction),
+		ModuleAddress: moduleAddress,
 		MakerOrderID:  candidate.Maker.OrderID,
 		TakerOrderID:  candidate.Taker.OrderID,
 		Actions:       []json.RawMessage{takerAction, makerAction},
@@ -194,6 +221,21 @@ func normalizeAction(order orders.Order) (json.RawMessage, error) {
 	if actionSigner, ok := action["signer"].(string); !ok || strings.ToLower(actionSigner) != strings.ToLower(order.SignerAddress) {
 		return nil, fmt.Errorf("signer mismatch")
 	}
+	module, _ := action["module"].(string)
+	owner, _ := action["owner"].(string)
+	signer, _ := action["signer"].(string)
+	if !isEVMAddress(module) {
+		return nil, fmt.Errorf("module must be a 20-byte 0x address")
+	}
+	if !isEVMAddress(owner) {
+		return nil, fmt.Errorf("owner must be a 20-byte 0x address")
+	}
+	if !isEVMAddress(signer) {
+		return nil, fmt.Errorf("signer must be a 20-byte 0x address")
+	}
+	action["module"] = strings.ToLower(module)
+	action["owner"] = strings.ToLower(owner)
+	action["signer"] = strings.ToLower(signer)
 
 	normalized, err := json.Marshal(action)
 	if err != nil {
@@ -210,4 +252,8 @@ func extractModuleAddress(raw json.RawMessage) string {
 		return ""
 	}
 	return strings.ToLower(action.Module)
+}
+
+func isEVMAddress(value string) bool {
+	return evmAddressPattern.MatchString(strings.TrimSpace(value))
 }

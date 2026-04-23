@@ -149,6 +149,27 @@ resolves this instrument by exact `(asset_address, sub_id)` and exposes the cano
 - `quote_asset_symbol=cNGN`
 
 If `EXPECTED_ORDER_OWNER` or `EXPECTED_ORDER_SIGNER` are set, the API rejects orders whose declared owner/signer do not match those configured addresses. The API also validates that `action_json.owner`, `action_json.signer`, `action_json.subaccount_id`, and `action_json.nonce` match the stored order fields.
+With `ENFORCE_ACTION_DATA_INVARIANTS=true` (default), the API also rejects orders unless:
+
+- `action_json.data.asset` matches `asset_address`
+- `action_json.data.subId` matches `sub_id`
+- `action_json.data.isBid` matches `side`
+- `action_json.data.limitPrice` and `action_json.data.desiredAmount` are on the same canonical scale as normalized engine fields
+
+Custody requirement for onchain execution:
+
+- Orders submitted for `verifyAndMatch` must reference subaccounts already deposited into `Matching`.
+- API pre-submit guard (enabled by default) checks both:
+- `SubAccounts.ownerOf(subaccount_id) == MATCHING_ADDRESS`
+- `Matching.subAccountToOwner(subaccount_id) != 0x0000000000000000000000000000000000000000`
+- If these checks fail, order submit is rejected before persistence/executor.
+
+Relevant env:
+
+- `ENFORCE_MATCHING_CUSTODY=true`
+- `ENFORCE_ACTION_DATA_INVARIANTS=true`
+- `MATCHING_ADDRESS=0x...`
+- `CHAIN_RPC_URL=https://...` (required when custody guard is enabled and matching is configured)
 
 `EXECUTOR_URL` is the endpoint for a separate executor process, likely implemented in
 TypeScript with `viem`, that performs simulation and submits `verifyAndMatch(...)`.
@@ -181,6 +202,7 @@ Public endpoints:
 
 - `GET /oracle/btcvar30/latest`
 - `GET /oracle/btcvar30/history?limit=100`
+- `GET /v1/orders/{order_id}` (status snapshot for runners/diagnostics)
 
 Example latest response:
 
@@ -403,6 +425,28 @@ That file can be generated with:
 
 The matcher will then forward the `manager_data` blob automatically in every executor payload
 instead of hardcoding `0x`.
+
+### Namespace Separation For Cancels
+
+Service-tagged cancels (`/v1/orders/cancel` requests with `service`) are blocked for protected
+order namespaces so bot sweeps cannot cancel manual/smoke/validation orders.
+
+- `CANCEL_PROTECTED_ORDER_ID_PREFIXES=validation:,smoke:,manual:`
+
+Manual cancels without a `service` tag are still allowed.
+
+### Production Smoke: Deposited APR Cross
+
+Use the built-in smoke script to run the exact deposited cross flow (`ask 0.001 @ 1390`,
+`buy 0.001 @ 1391`) with real signed orders and assert `/v1/trades` increments:
+
+```bash
+PRIVATE_KEY=0x... \
+./scripts/smoke_deposited_cross.sh
+```
+
+The script submits namespaced order IDs (`smoke:apr:...`) so they stay separated from bot order
+namespaces and cancel sweeps, and then verifies terminal order state through `GET /v1/orders/{order_id}`.
 
 ## First Milestone
 

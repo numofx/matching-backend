@@ -14,8 +14,10 @@ type Config struct {
 	APIAddr                       string
 	DatabaseURL                   string
 	MatcherPollInterval           time.Duration
+	ChainRPCURL                   string
 	ChainID                       string
 	MatchingAddress               string
+	EnforceMatchingCustody        bool
 	TradeModuleAddress            string
 	BTCPerpAssetAddress           string
 	ExecutorURL                   string
@@ -35,6 +37,8 @@ type Config struct {
 	CNGNSpotAssetAddress          string
 	CNGNApr2026FutureAssetAddress string
 	CNGNApr2026FutureSubID        string
+	EnforceActionDataInvariants   bool
+	CancelProtectedOrderPrefixes  []string
 }
 
 func Load() (Config, error) {
@@ -42,8 +46,10 @@ func Load() (Config, error) {
 		AppEnv:                        getenvDefault("APP_ENV", "dev"),
 		APIAddr:                       getenvDefault("API_ADDR", ":8080"),
 		DatabaseURL:                   os.Getenv("DATABASE_URL"),
+		ChainRPCURL:                   getenvDefault("CHAIN_RPC_URL", os.Getenv("RPC_URL")),
 		ChainID:                       os.Getenv("CHAIN_ID"),
 		MatchingAddress:               os.Getenv("MATCHING_ADDRESS"),
+		EnforceMatchingCustody:        getenvBool("ENFORCE_MATCHING_CUSTODY", true),
 		TradeModuleAddress:            os.Getenv("TRADE_MODULE_ADDRESS"),
 		BTCPerpAssetAddress:           os.Getenv("BTC_PERP_ASSET_ADDRESS"),
 		ExecutorURL:                   os.Getenv("EXECUTOR_URL"),
@@ -60,6 +66,8 @@ func Load() (Config, error) {
 		CNGNSpotAssetAddress:          strings.ToLower(strings.TrimSpace(os.Getenv("CNGN_SPOT_ASSET_ADDRESS"))),
 		CNGNApr2026FutureAssetAddress: strings.ToLower(strings.TrimSpace(os.Getenv("CNGN_APR30_2026_FUTURE_ASSET_ADDRESS"))),
 		CNGNApr2026FutureSubID:        strings.TrimSpace(os.Getenv("CNGN_APR30_2026_FUTURE_SUB_ID")),
+		EnforceActionDataInvariants:   getenvBool("ENFORCE_ACTION_DATA_INVARIANTS", true),
+		CancelProtectedOrderPrefixes:  getenvCSV("CANCEL_PROTECTED_ORDER_ID_PREFIXES", "validation:,smoke:,manual:"),
 	}
 
 	managerData, err := loadExecutorManagerData()
@@ -150,6 +158,27 @@ func getenvBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func getenvCSV(key string, fallback string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		raw = fallback
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.ToLower(strings.TrimSpace(part))
+		if trimmed == "" {
+			continue
+		}
+		values = append(values, trimmed)
+	}
+	return values
 }
 
 func loadExecutorManagerData() (string, error) {
