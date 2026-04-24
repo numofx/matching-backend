@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"strings"
 	"time"
@@ -161,7 +162,7 @@ func (r createOrderRequest) toParams(cfg config.Config) (orders.CreateOrderParam
 		return orders.CreateOrderParams{}, err
 	}
 	if cfg.EnforceActionDataInvariants {
-		if err := validateActionDataInvariants(r.ActionJSON, side, assetAddress, subID, limitPriceTicks, normalizedDesiredAmount); err != nil {
+		if err := validateActionDataInvariants(r.ActionJSON, side, assetAddress, subID, limitPriceTicks, normalizedDesiredAmount, instrument); err != nil {
 			return orders.CreateOrderParams{}, err
 		}
 	}
@@ -295,7 +296,7 @@ type parsedTradeActionData struct {
 	IsBid         bool
 }
 
-func validateActionDataInvariants(raw json.RawMessage, side orders.Side, assetAddress string, subID string, limitPriceTicks string, desiredAmountAtomic string) error {
+func validateActionDataInvariants(raw json.RawMessage, side orders.Side, assetAddress string, subID string, limitPriceTicks string, desiredAmountAtomic string, instrument instruments.Metadata) error {
 	action, err := parseActionTradeData(raw)
 	if err != nil {
 		return fmt.Errorf("action_json.data invariant check failed: %w", err)
@@ -326,10 +327,56 @@ func validateActionDataInvariants(raw json.RawMessage, side orders.Side, assetAd
 		return fmt.Errorf("action_json.data.limitPrice is not aligned with normalized limit_price")
 	}
 	amountScale, amountRem := new(big.Int).QuoRem(action.DesiredAmount, desiredAtomicInt, new(big.Int))
-	if amountRem.Sign() != 0 || amountScale.Sign() <= 0 {
-		return fmt.Errorf("action_json.data.desiredAmount is not aligned with normalized desired_amount")
+	if amountRem.Sign() == 0 && amountScale.Sign() > 0 {
+		return nil
 	}
-	return nil
+
+	compatReason := "not_divisible"
+	compatPass := false
+	stepRaw := amountAtomicStep(instrument)
+	if compatScale, ok := reciprocalScale(stepRaw); ok {
+		expected := new(big.Int).Mul(action.DesiredAmount, compatScale)
+		if expected.Cmp(desiredAtomicInt) == 0 {
+			compatPass = true
+			compatReason = "raw_desired_amount_compat_mode"
+		} else {
+			compatReason = "raw_desired_amount_mismatch"
+		}
+	} else {
+		compatReason = "non_integer_reciprocal_step"
+	}
+
+	slog.Warn(
+		"order_action_desired_amount_alignment_mismatch",
+		"market_symbol", instrument.Symbol,
+		"quote_precision", instrument.QuotePrecision,
+		"contract_multiplier", instrument.ContractMultiplier,
+		"tick_size", instrument.TickSize,
+		"lot_size", stepRaw,
+		"incoming_action_desired_amount", action.DesiredAmount.String(),
+		"normalized_desired_amount", desiredAmountAtomic,
+		"parsed_action_desired_amount_raw", action.DesiredAmount.String(),
+		"amount_scale", amountScale.String(),
+		"amount_remainder", amountRem.String(),
+		"reason", compatReason,
+	)
+
+	if compatPass {
+		return nil
+	}
+	return fmt.Errorf("action_json.data.desiredAmount is not aligned with normalized desired_amount")
+}
+
+func reciprocalScale(raw string) (*big.Int, bool) {
+	stepRat, ok := new(big.Rat).SetString(strings.TrimSpace(raw))
+	if !ok || stepRat.Sign() <= 0 {
+		return nil, false
+	}
+	reciprocal := new(big.Rat).Inv(stepRat)
+	if !reciprocal.IsInt() {
+		return nil, false
+	}
+	return new(big.Int).Set(reciprocal.Num()), true
 }
 
 func parseActionTradeData(raw json.RawMessage) (parsedTradeActionData, error) {

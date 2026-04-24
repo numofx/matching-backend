@@ -470,6 +470,51 @@ func TestCreateOrderRequestToParamsRejectsActionDataScaleMismatch(t *testing.T) 
 	}
 }
 
+func TestCreateOrderRequestToParamsAcceptsMarketMakerRawDesiredAmountPayload(t *testing.T) {
+	asset := "0xce2846771074e20fec739cf97a60e6075d1e464b"
+	req := createOrderRequest{
+		OrderID:       "order-apr-mm-raw-desired",
+		OwnerAddress:  "0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+		SignerAddress: "0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+		SubaccountID:  "6",
+		RecipientID:   "6",
+		Nonce:         "13",
+		Side:          "buy",
+		AssetAddress:  asset,
+		SubID:         "1777507200",
+		DesiredAmount: "5000000000000000000",
+		FilledAmount:  "0",
+		LimitPrice:    "1355",
+		WorstFee:      "0",
+		Expiry:        time.Now().Add(time.Hour).Unix(),
+		ActionJSON: json.RawMessage(`{
+			"subaccount_id":"6",
+			"nonce":"13",
+			"module":"0x0aae65aaa66fe7f54486cdbd007956d3de611990",
+			"data":"` + mustTradeDataHex(asset, "1777507200", "1355000000000000000000", "5000000000000000000", true) + `",
+			"expiry":"1777507200",
+			"owner":"0xc7be60b228b997c23094ddfdd71e22e2de6c9310",
+			"signer":"0xc7be60b228b997c23094ddfdd71e22e2de6c9310"
+		}`),
+		Signature: "0xsig",
+	}
+
+	params, err := req.toParams(config.Config{
+		CNGNApr2026FutureAssetAddress: asset,
+		CNGNApr2026FutureSubID:        "1777507200",
+		EnforceActionDataInvariants:   true,
+	})
+	if err != nil {
+		t.Fatalf("toParams returned error: %v", err)
+	}
+	if params.LimitPriceTicks != "1355" {
+		t.Fatalf("limit_price_ticks = %s", params.LimitPriceTicks)
+	}
+	if params.DesiredAmount != "5000000000000000000000" {
+		t.Fatalf("desired_amount = %s", params.DesiredAmount)
+	}
+}
+
 func mustTradeDataHex(asset string, subID string, limitPrice string, desiredAmount string, isBid bool) string {
 	var out []byte
 	out = append(out, encodeAddressWord(asset)...)
