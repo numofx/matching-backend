@@ -114,12 +114,13 @@ where limit_price_ticks is null
 	for _, item := range updates {
 		instrument, ok := registry.ByAssetAndSubID(strings.ToLower(item.AssetAddress), item.SubID)
 		if !ok {
-			return fmt.Errorf(
-				"missing instrument metadata for asset %s and sub_id %s while backfilling order %s",
-				item.AssetAddress,
-				item.SubID,
-				item.OrderID,
+			slog.Warn(
+				"skip limit price tick backfill for unknown instrument",
+				"order_id", item.OrderID,
+				"asset_address", item.AssetAddress,
+				"sub_id", item.SubID,
 			)
+			continue
 		}
 		converter, err := pricing.NewConverter(instrument)
 		if err != nil {
