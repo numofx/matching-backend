@@ -4,6 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 API_BASE="${API_BASE:-https://markets-service-production.up.railway.app}"
+API_BASE_PRIMARY="$API_BASE"
+API_BASE_BACKUP="${API_BASE_BACKUP:-${API_BASE_FALLBACK:-}}"
+if [ -z "$API_BASE_BACKUP" ] && [ -n "${RAILWAY_SERVICE_MARKETS_SERVICE_URL:-}" ]; then
+  case "$RAILWAY_SERVICE_MARKETS_SERVICE_URL" in
+    http://*|https://*) API_BASE_BACKUP="$RAILWAY_SERVICE_MARKETS_SERVICE_URL" ;;
+    *) API_BASE_BACKUP="https://$RAILWAY_SERVICE_MARKETS_SERVICE_URL" ;;
+  esac
+fi
 ASSET_ADDRESS="${ASSET_ADDRESS:-0xCE2846771074E20fEc739CF97a60E6075D1E464b}"
 SUB_ID="${SUB_ID:-1777507200}"
 
@@ -62,6 +70,7 @@ FAILURE_CLASS_FILE="$TMP_DIR/failure_class.txt"
 FAILURE_DETAIL_FILE="$TMP_DIR/failure_detail.txt"
 NEXT_NONCE=""
 EFFECTIVE_STATE_BACKEND=""
+API_FAILOVER_USED="false"
 printf '%s' '{}' > "$STATUS_JSON_FILE"
 
 require_cmd() {
@@ -200,21 +209,92 @@ fail() {
   return 1
 }
 
+is_infra_failure_class() {
+  local class="${1:-}"
+  [ "$class" = "api_dns_resolution" ] || [ "$class" = "api_connectivity" ]
+}
+
+classify_transport_failure() {
+  local code="${1:-0}"
+  if [ "$code" -eq 6 ]; then
+    printf '%s' "api_dns_resolution"
+    return
+  fi
+  printf '%s' "api_connectivity"
+}
+
+api_request() {
+  local method="$1"
+  local path="$2"
+  local mode="${3:-none}"
+  local payload="${4:-}"
+  local url response body code rc stderr_file stderr_text failure_class
+  local attempt=1
+
+  while [ "$attempt" -le 2 ]; do
+    url="${API_BASE}${path}"
+    stderr_file="$TMP_DIR/curl_${RUN_ID}_${attempt}.stderr"
+    rm -f "$stderr_file"
+
+    case "$mode" in
+      file)
+        response="$(curl -sS -X "$method" "$url" -H 'content-type: application/json' --data @"$payload" -w $'\n%{http_code}' 2>"$stderr_file")"
+        rc=$?
+        ;;
+      json)
+        response="$(curl -sS -X "$method" "$url" -H 'content-type: application/json' --data "$payload" -w $'\n%{http_code}' 2>"$stderr_file")"
+        rc=$?
+        ;;
+      *)
+        response="$(curl -sS -X "$method" "$url" -w $'\n%{http_code}' 2>"$stderr_file")"
+        rc=$?
+        ;;
+    esac
+
+    if [ "$rc" -ne 0 ]; then
+      stderr_text="$(tr '\n' ' ' < "$stderr_file" 2>/dev/null || true)"
+      if [ "$rc" -eq 6 ] && [ "$attempt" -eq 1 ] && [ "$API_BASE" = "$API_BASE_PRIMARY" ] && [ -n "$API_BASE_BACKUP" ] && [ "$API_BASE_BACKUP" != "$API_BASE_PRIMARY" ]; then
+        API_BASE="$API_BASE_BACKUP"
+        API_FAILOVER_USED="true"
+        attempt=$((attempt + 1))
+        continue
+      fi
+      failure_class="$(classify_transport_failure "$rc")"
+      fail "$failure_class" "$method $path transport failure curl_exit=$rc base=$API_BASE stderr=$stderr_text" || true
+      return 1
+    fi
+
+    body="$(printf '%s' "$response" | sed '$d')"
+    code="$(printf '%s' "$response" | tail -n1)"
+    if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+      fail "api_http_error" "$method $path returned http_status=$code base=$API_BASE body=$(printf '%s' "$body" | tr '\n' ' ')" || true
+      return 1
+    fi
+
+    API_RESP_BODY="$body"
+    API_RESP_CODE="$code"
+    return 0
+  done
+
+  fail "api_connectivity" "$method $path exhausted retry attempts base=$API_BASE" || true
+  return 1
+}
+
 fetch_trade_count() {
   local trades
-  if ! trades="$(curl -fsS "$API_BASE/v1/trades?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID")"; then
-    fail "api_http_error" "GET /v1/trades failed" || true
+  if ! api_request "GET" "/v1/trades?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID"; then
     return 1
   fi
+  trades="$API_RESP_BODY"
   printf '%s' "$trades" | jq -r '.trades[0].trade_id // 0'
 }
 
 fetch_latest_trade() {
   local trades
-  if ! trades="$(curl -fsS "$API_BASE/v1/trades?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID")"; then
-    fail "api_http_error" "GET /v1/trades failed" || true
+  if ! api_request "GET" "/v1/trades?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID"; then
     return 1
   fi
+  trades="$API_RESP_BODY"
   printf '%s' "$trades" | jq '.trades[0]'
 }
 
@@ -228,10 +308,10 @@ determine_cross_prices() {
     return 0
   fi
   local book best_ask
-  if ! book="$(curl -fsS "$API_BASE/v1/book?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID")"; then
-    fail "api_http_error" "GET /v1/book failed while deriving prices" || true
+  if ! api_request "GET" "/v1/book?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID"; then
     return 1
   fi
+  book="$API_RESP_BODY"
   best_ask="$(printf '%s' "$book" | jq -r '.asks[0].limit_price // empty')"
   if [ -z "$best_ask" ] || [ "$best_ask" -le 1 ]; then
     return 0
@@ -299,29 +379,19 @@ build_order_payload() {
 
 submit_order_file() {
   local order_file="$1"
-  local response
-  local body
-  local code
-  if ! response="$(curl -sS -X POST "$API_BASE/v1/orders" -H 'content-type: application/json' --data @"$order_file" -w $'\n%{http_code}')" ; then
-    fail "api_http_error" "POST /v1/orders transport failure for file=$order_file" || true
+  if ! api_request "POST" "/v1/orders" "file" "$order_file"; then
     return 1
   fi
-  body="$(printf '%s' "$response" | sed '$d')"
-  code="$(printf '%s' "$response" | tail -n1)"
-  if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-    fail "api_http_error" "POST /v1/orders returned http_status=$code for file=$order_file body=$(printf '%s' "$body" | tr '\n' ' ')" || true
-    return 1
-  fi
-  printf '%s' "$body"
+  printf '%s' "$API_RESP_BODY"
 }
 
 fetch_order_status() {
   local order_id="$1"
   local response
-  if ! response="$(curl -fsS "$API_BASE/v1/orders/$order_id")"; then
-    fail "api_http_error" "GET /v1/orders/$order_id failed" || true
+  if ! api_request "GET" "/v1/orders/$order_id"; then
     return 1
   fi
+  response="$API_RESP_BODY"
   record_status_json "$order_id" "$response"
   printf '%s' "$response"
 }
@@ -363,10 +433,10 @@ assert_not_resting_on_book() {
     return 0
   fi
   local book ids_csv
-  if ! book="$(curl -fsS "$API_BASE/v1/book?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID")"; then
-    fail "api_http_error" "GET /v1/book failed" || true
+  if ! api_request "GET" "/v1/book?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID"; then
     return 1
   fi
+  book="$API_RESP_BODY"
   ids_csv="$(printf '%s' "$*" | tr ' ' '|')"
   if printf '%s' "$book" | rg -q "$ids_csv"; then
     fail "smoke_order_still_resting_on_book" "one or more smoke orders still present in book" || true
@@ -380,8 +450,7 @@ cancel_order() {
   local reason="$3"
   local body
   body="$(jq -cn --arg owner "$owner_address" --arg nonce "$nonce" --arg reason "$reason" '{owner_address:$owner,nonce:$nonce,reason:$reason}')"
-  if ! curl -fsS -X POST "$API_BASE/v1/orders/cancel" -H 'content-type: application/json' --data "$body" >/dev/null; then
-    fail "api_http_error" "POST /v1/orders/cancel failed for owner=$owner_address nonce=$nonce" || true
+  if ! api_request "POST" "/v1/orders/cancel" "json" "$body"; then
     return 1
   fi
 }
@@ -390,10 +459,10 @@ preflight_cleanup_prefixed_orders() {
   local max_rounds="${1:-5}"
   local round book rows row owner nonce order_id
   for round in $(seq 1 "$max_rounds"); do
-    if ! book="$(curl -fsS "$API_BASE/v1/book?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID")"; then
-      fail "api_http_error" "GET /v1/book failed during preflight cleanup" || true
+    if ! api_request "GET" "/v1/book?asset_address=$ASSET_ADDRESS&sub_id=$SUB_ID"; then
       return 1
     fi
+    book="$API_RESP_BODY"
 
     rows="$(printf '%s' "$book" | jq -r '
       [(.asks // []), (.bids // [])] | add
@@ -618,7 +687,7 @@ run_smoke_suite() {
 
 finalize_with_kpi() {
   local run_success="$1"
-  local state cutoff metrics total success rate effective_failure_class effective_failure_detail incident_active
+  local state cutoff metrics total success rate matching_metrics matching_total matching_success matching_rate effective_failure_class effective_failure_detail incident_active alert_scope
 
   state_store_init
   state="$(load_state)"
@@ -636,11 +705,22 @@ finalize_with_kpi() {
   metrics="$(printf '%s' "$state" | jq '{total:(.runs|length),success:(.runs|map(select(.success==true))|length)}')"
   total="$(printf '%s' "$metrics" | jq -r '.total')"
   success="$(printf '%s' "$metrics" | jq -r '.success')"
+  matching_metrics="$(printf '%s' "$state" | jq '{
+    total: (.runs | map(select((.failure_class // "") != "api_dns_resolution" and (.failure_class // "") != "api_connectivity")) | length),
+    success: (.runs | map(select((.failure_class // "") != "api_dns_resolution" and (.failure_class // "") != "api_connectivity" and .success == true)) | length)
+  }')"
+  matching_total="$(printf '%s' "$matching_metrics" | jq -r '.total')"
+  matching_success="$(printf '%s' "$matching_metrics" | jq -r '.success')"
 
   if [ "$total" -eq 0 ]; then
     rate="100.00"
   else
     rate="$(awk -v s="$success" -v t="$total" 'BEGIN { printf "%.2f", (s/t)*100 }')"
+  fi
+  if [ "$matching_total" -eq 0 ]; then
+    matching_rate="100.00"
+  else
+    matching_rate="$(awk -v s="$matching_success" -v t="$matching_total" 'BEGIN { printf "%.2f", (s/t)*100 }')"
   fi
 
   effective_failure_class="$FAILURE_CLASS"
@@ -662,6 +742,10 @@ finalize_with_kpi() {
   incident_active="$(printf '%s' "$state" | jq -r '.incident.active // false')"
 
   if [ -n "$effective_failure_class" ]; then
+    alert_scope="exchange_matching"
+    if is_infra_failure_class "$effective_failure_class"; then
+      alert_scope="platform_network"
+    fi
     if [ "$incident_active" != "true" ]; then
       state="$(printf '%s' "$state" | jq \
         --argjson ts "$NOW" \
@@ -670,16 +754,20 @@ finalize_with_kpi() {
         '.incident = {active:true,first_ts:$ts,class:$class,detail:$detail,last_seen_ts:$ts}')"
       save_state "$state"
       echo "ALERT first_failure class=$effective_failure_class"
+      echo "alert_scope=$alert_scope"
       echo "detail: $effective_failure_detail"
       echo "kpi_success_rate: ${rate}% (${success}/${total}) over ${KPI_WINDOW_HOURS}h"
+      echo "matching_path_kpi_success_rate: ${matching_rate}% (${matching_success}/${matching_total}) over ${KPI_WINDOW_HOURS}h"
       exit 1
     fi
 
     state="$(printf '%s' "$state" | jq --argjson ts "$NOW" '.incident.last_seen_ts = $ts')"
     save_state "$state"
     echo "suppressed_repeat_failure class=$effective_failure_class"
+    echo "alert_scope=$alert_scope"
     echo "detail: $effective_failure_detail"
     echo "kpi_success_rate: ${rate}% (${success}/${total}) over ${KPI_WINDOW_HOURS}h"
+    echo "matching_path_kpi_success_rate: ${matching_rate}% (${matching_success}/${matching_total}) over ${KPI_WINDOW_HOURS}h"
     exit 0
   fi
 
@@ -690,7 +778,11 @@ finalize_with_kpi() {
   state="$(printf '%s' "$state" | jq '.incident = {active:false}')"
   save_state "$state"
   echo "$SMOKE_SUMMARY"
+  if [ "$API_FAILOVER_USED" = "true" ]; then
+    echo "api_base_failover: true primary=$API_BASE_PRIMARY backup=$API_BASE_BACKUP active=$API_BASE"
+  fi
   echo "kpi_success_rate: ${rate}% (${success}/${total}) over ${KPI_WINDOW_HOURS}h"
+  echo "matching_path_kpi_success_rate: ${matching_rate}% (${matching_success}/${matching_total}) over ${KPI_WINDOW_HOURS}h"
   exit 0
 }
 
